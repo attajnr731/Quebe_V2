@@ -21,7 +21,7 @@ const Login = () => {
 
     // Simple validation
     if (phoneNumber && password) {
-      router.replace("/screens/home");
+      router.replace("/screens/tabs/home");
     } else {
       alert("Please enter both phone number and password.");
     }
@@ -53,7 +53,7 @@ const Login = () => {
               resizeMode="contain"
             />
             <Text className="text-3xl font-bold text-gray-900 font-[Outfit] mb-2">
-              Welcome Backsss
+              Welcome Back
             </Text>
           </View>
 

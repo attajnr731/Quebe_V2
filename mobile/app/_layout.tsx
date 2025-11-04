@@ -34,10 +34,7 @@ export default function RootLayout() {
       <Stack>
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="screens/login" options={{ headerShown: false }} />
-        <Stack.Screen name="screens/signup" options={{ headerShown: false }} />
-        <Stack.Screen name="screens/home" options={{ headerShown: false }} />
-        <Stack.Screen name="screens/history" options={{ headerShown: false }} />
-        <Stack.Screen name="screens/profile" options={{ headerShown: false }} />
+        <Stack.Screen name="screens/tabs" options={{ headerShown: false }} />
       </Stack>
     </SafeAreaProvider>
   );
