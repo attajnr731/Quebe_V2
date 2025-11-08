@@ -9,10 +9,5 @@ body {
 }
 
 * {
-  font-family: 'Outfit', sans-serif;
   box-sizing: border-box;
-}
-
-.logo {
-  font-family: 'Pacifico', cursive;
 }

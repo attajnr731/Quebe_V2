@@ -1,4 +1,8 @@
-// mock/organizations.ts
+export interface Branch {
+  id: string;
+  name: string;
+}
+
 export interface Service {
   id: string;
   name: string;
@@ -14,6 +18,7 @@ export interface Organization {
   services?: Service[];
   queueSize?: number;
   avgWaitMin?: number;
+  branches?: Branch[];
 }
 
 export const organizations: Organization[] = [
@@ -22,10 +27,13 @@ export const organizations: Organization[] = [
     name: "City Bank",
     logo: "account-balance",
     type: "bank",
+    branches: [
+      { id: "b1", name: "Downtown Branch" },
+      { id: "b2", name: "Airport Branch" },
+    ],
     services: [
       { id: "s1", name: "Account Opening", queueSize: 12, avgWaitMin: 8 },
       { id: "s2", name: "Loan Inquiry", queueSize: 5, avgWaitMin: 15 },
-      { id: "s3", name: "Cash Deposit", queueSize: 8, avgWaitMin: 5 },
     ],
   },
   {
@@ -33,6 +41,10 @@ export const organizations: Organization[] = [
     name: "MediCare Hospital",
     logo: "local-hospital",
     type: "hospital",
+    branches: [
+      { id: "b1", name: "Main Campus" },
+      { id: "b2", name: "Annex Clinic" },
+    ],
     queueSize: 42,
     avgWaitMin: 25,
   },

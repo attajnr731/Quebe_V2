@@ -1,36 +1,88 @@
 import React, { useState } from "react";
-import { View, Text, TouchableOpacity, Dimensions } from "react-native";
+import { View, Text, TouchableOpacity, Dimensions, Alert } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
   withTiming,
   withDelay,
   Easing,
 } from "react-native-reanimated";
 import { mockQueues } from "../mock/queues";
 import JoinQueue from "../modals/joinQueue";
+import TopUpAmountModal from "./payment/TopUpAmountModal";
+import PaystackWebView from "./payment/PaystackWebView";
 
 const { width } = Dimensions.get("window");
+
+// PAYSTACK CONFIG (move to .env in production!)
+const PAYSTACK_PUBLIC_KEY = "pk_test_c475be44704411a11ddded174ab54f75aaa9f728";
+const USER_EMAIL = "attajnr731@gmail.com";
 
 const Home = () => {
   const router = useRouter();
   const [selectedQueueId, setSelectedQueueId] = useState<string | null>(null);
   const [showJoinModal, setShowJoinModal] = useState(false);
+  const [showAmountModal, setShowAmountModal] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState("");
 
   const handleNotifications = () => console.log("Go to notifications");
   const handleComplaint = () => console.log("Make a complaint");
   const handleJoinQueue = () => setShowJoinModal(true);
 
-  const handleJoinQueueSubmit = (queueCode: string, notes?: string) => {
-    console.log("Joining queue:", queueCode, notes);
-    // Add your queue joining logic here
+  const handleJoinQueueSubmit = (data: {
+    orgId: string;
+    branchId?: string;
+    serviceId?: string;
+    notifyAt?: number;
+  }) => {
+    console.log("Joining queue:", data);
     setShowJoinModal(false);
   };
-  const handleTopUpCredit = () => console.log("Top up credit");
+
+  const handleTopUpCredit = () => {
+    setPaymentAmount("");
+    setShowAmountModal(true);
+  };
+
+  const handleProceedToPayment = () => {
+    const amt = parseFloat(paymentAmount);
+    if (!paymentAmount || isNaN(amt) || amt <= 0) {
+      Alert.alert("Invalid Amount", "Please enter a valid amount");
+      return;
+    }
+    if (amt < 1) {
+      Alert.alert("Minimum Amount", "Minimum top-up amount is GH₵ 1.00");
+      return;
+    }
+    setShowAmountModal(false);
+    setShowPaymentModal(true);
+  };
+
+  const handlePaymentSuccess = (reference: string) => {
+    Alert.alert(
+      "Success!",
+      `GH₵ ${parseFloat(paymentAmount).toFixed(
+        2
+      )} has been added to your account`,
+      [{ text: "OK" }]
+    );
+    setShowPaymentModal(false);
+    setPaymentAmount("");
+    // TODO: verify on backend
+  };
+
+  const handlePaymentCancel = () => {
+    setShowPaymentModal(false);
+  };
+
+  const handleCloseAmountModal = () => {
+    setShowAmountModal(false);
+    setPaymentAmount("");
+  };
 
   const userCredits = 10;
 
@@ -39,6 +91,94 @@ const Home = () => {
     const h = Math.floor(mins / 60);
     const m = mins % 60;
     return `${h}h ${m > 0 ? `${m}m` : ""}`.trim();
+  };
+
+  // Quick amount buttons
+  const quickAmounts = [5, 10, 20, 50, 100];
+
+  // Generate HTML with embedded Paystack script - auto-opens payment
+  const generatePaystackHTML = () => {
+    const paystackKey = "pk_test_c475be44704411a11ddded174ab54f75aaa9f728";
+    const email = "attajnr731@gmail.com";
+    const amount = parseFloat(paymentAmount);
+    const reference = `QUEUE_${Date.now()}`;
+
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://js.paystack.co/v1/inline.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #f9fafb;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+        .loading {
+            text-align: center;
+            color: #6B7280;
+        }
+        .spinner {
+            border: 3px solid #E5E7EB;
+            border-top: 3px solid #2563EB;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="loading">
+        <div class="spinner"></div>
+        <p>Opening payment...</p>
+    </div>
+
+    <script>
+        function payWithPaystack() {
+            var handler = PaystackPop.setup({
+                key: '${paystackKey}',
+                email: '${email}',
+                amount: ${amount * 100}, // Amount in pesewas
+                currency: 'GHS',
+                ref: '${reference}',
+                channels: ['card', 'mobile_money'],
+                onClose: function() {
+                    window.ReactNativeWebView.postMessage(JSON.stringify({
+                        event: 'cancelled'
+                    }));
+                },
+                callback: function(response) {
+                    window.ReactNativeWebView.postMessage(JSON.stringify({
+                        event: 'success',
+                        reference: response.reference,
+                        transaction: response.transaction,
+                        message: response.message
+                    }));
+                }
+            });
+            handler.openIframe();
+        }
+        
+        // Auto-open payment immediately when page loads
+        window.onload = function() {
+            setTimeout(payWithPaystack, 100);
+        };
+    </script>
+</body>
+</html>
+    `;
   };
 
   return (
@@ -53,6 +193,7 @@ const Home = () => {
           <MaterialIcons name="notifications-none" size={28} color="#2563EB" />
         </TouchableOpacity>
       </View>
+
       {/* Main Content */}
       <View className="flex-1 px-6 pt-4">
         {/* Join Queue Card */}
@@ -61,14 +202,12 @@ const Home = () => {
           activeOpacity={0.9}
           className="rounded-2xl overflow-hidden shadow-lg mb-6"
         >
-          {/* Blue Gradient Background */}
           <LinearGradient
             colors={["#2563EB", "#1E3A8A"]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             className="p-6"
           >
-            {/* Decorative Circle */}
             <View
               className="absolute bg-blue-300 opacity-15 rounded-full"
               style={{
@@ -79,7 +218,6 @@ const Home = () => {
               }}
             />
 
-            {/* Card Content */}
             <View className="flex-row items-center justify-between mb-4 p-3">
               <View>
                 <Text className="text-3xl font-bold text-white">
@@ -94,7 +232,6 @@ const Home = () => {
               </View>
             </View>
 
-            {/* Credit Balance with Top Up Button */}
             <View className="bg-white/15 rounded-xl p-4 mt-2">
               <View className="flex-row items-center justify-between">
                 <View>
@@ -116,7 +253,8 @@ const Home = () => {
             </View>
           </LinearGradient>
         </TouchableOpacity>
-        {/* ───── Your Queues – Classic Design ───── */}
+
+        {/* Your Queues */}
         {mockQueues.length > 0 && (
           <View className="mb-8">
             <Text className="text-lg font-semibold text-gray-800 mb-4 px-1">
@@ -139,10 +277,34 @@ const Home = () => {
           </View>
         )}
       </View>
+
+      {/* Join Queue Modal */}
       <JoinQueue
         visible={showJoinModal}
         onClose={() => setShowJoinModal(false)}
         onJoinQueue={handleJoinQueueSubmit}
+      />
+
+      {/* ---- AMOUNT INPUT MODAL ---- */}
+      <TopUpAmountModal
+        visible={showAmountModal}
+        amount={paymentAmount}
+        onAmountChange={setPaymentAmount}
+        onClose={() => {
+          setShowAmountModal(false);
+          setPaymentAmount("");
+        }}
+        onProceed={handleProceedToPayment}
+      />
+
+      {/* ---- PAYSTACK WEBVIEW MODAL ---- */}
+      <PaystackWebView
+        visible={showPaymentModal}
+        amount={paymentAmount}
+        email={USER_EMAIL}
+        publicKey={PAYSTACK_PUBLIC_KEY}
+        onSuccess={handlePaymentSuccess}
+        onCancel={handlePaymentCancel}
       />
     </View>
   );
@@ -195,7 +357,6 @@ const ClassicQueueCard = ({ queue, isSelected, onPress, formatWait }: any) => {
       className="bg-white rounded-xl p-4  border border-gray-200 my-1"
     >
       <View className="flex-row items-center justify-between">
-        {/* Left: Organization Info */}
         <View className="flex-row items-center flex-1">
           <View className="w-12 h-12 rounded-lg bg-blue-50 items-center justify-center">
             <MaterialIcons name={queue.logo as any} size={24} color="#2563EB" />
@@ -211,7 +372,6 @@ const ClassicQueueCard = ({ queue, isSelected, onPress, formatWait }: any) => {
           </View>
         </View>
 
-        {/* Right: Position Badge & Chevron */}
         <View className="flex-row items-center">
           <View className="bg-blue-600 px-3 py-1.5 rounded-full mr-2">
             <Text className="text-white font-bold text-sm">
@@ -224,10 +384,8 @@ const ClassicQueueCard = ({ queue, isSelected, onPress, formatWait }: any) => {
         </View>
       </View>
 
-      {/* Animated Expanded Content */}
       <Animated.View style={expandedStyle}>
         <View className="my-4 pt-4 border-t border-gray-100">
-          {/* Info Grid */}
           <View className="flex-row justify-between">
             <View className="flex-1">
               <Text className="text-xs text-gray-500 mb-1">People Ahead</Text>
@@ -249,7 +407,6 @@ const ClassicQueueCard = ({ queue, isSelected, onPress, formatWait }: any) => {
             </View>
           </View>
 
-          {/* Progress Bar */}
           <View className="mt-4">
             <View className="h-2 bg-gray-100 rounded-full overflow-hidden">
               <View
