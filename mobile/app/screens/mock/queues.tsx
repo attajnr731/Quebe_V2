@@ -2,12 +2,13 @@
 export interface QueueItem {
   id: string;
   orgName: string;
-  logo: string; // placeholder – you can use any icon name
-  position: number; // 1-based
+  logo: string;
+  position: number;
   totalAhead: number;
-  avgServiceTimeMin: number; // minutes per person
+  avgServiceTimeMin: number;
   peopleAhead: number;
-  estimatedWaitMin: number; // calculated
+  estimatedWaitMin: number;
+  queueCode: string;
 }
 
 export const mockQueues: QueueItem[] = [
@@ -20,6 +21,7 @@ export const mockQueues: QueueItem[] = [
     avgServiceTimeMin: 5,
     peopleAhead: 1,
     estimatedWaitMin: 5,
+    queueCode: "CB01", // added queueCode
   },
   {
     id: "q2",
@@ -30,5 +32,6 @@ export const mockQueues: QueueItem[] = [
     avgServiceTimeMin: 8,
     peopleAhead: 11,
     estimatedWaitMin: 88,
+    queueCode: "MC02", // added queueCode
   },
 ];

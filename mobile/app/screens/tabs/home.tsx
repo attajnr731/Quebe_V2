@@ -1,25 +1,31 @@
 import React, { useState } from "react";
-import { View, Text, TouchableOpacity, Dimensions, Alert } from "react-native";
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  Dimensions,
+  Alert,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+} from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
+import { WebView } from "react-native-webview";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
+  withSpring,
   withTiming,
   withDelay,
   Easing,
 } from "react-native-reanimated";
 import { mockQueues } from "../mock/queues";
 import JoinQueue from "../modals/joinQueue";
-import TopUpAmountModal from "./payment/TopUpAmountModal";
-import PaystackWebView from "./payment/PaystackWebView";
 
 const { width } = Dimensions.get("window");
-
-// PAYSTACK CONFIG (move to .env in production!)
-const PAYSTACK_PUBLIC_KEY = "pk_test_c475be44704411a11ddded174ab54f75aaa9f728";
-const USER_EMAIL = "attajnr731@gmail.com";
 
 const Home = () => {
   const router = useRouter();
@@ -44,25 +50,28 @@ const Home = () => {
   };
 
   const handleTopUpCredit = () => {
-    setPaymentAmount("");
     setShowAmountModal(true);
   };
 
   const handleProceedToPayment = () => {
-    const amt = parseFloat(paymentAmount);
-    if (!paymentAmount || isNaN(amt) || amt <= 0) {
+    const amount = parseFloat(paymentAmount);
+
+    if (!paymentAmount || isNaN(amount) || amount <= 0) {
       Alert.alert("Invalid Amount", "Please enter a valid amount");
       return;
     }
-    if (amt < 1) {
+
+    if (amount < 1) {
       Alert.alert("Minimum Amount", "Minimum top-up amount is GH₵ 1.00");
       return;
     }
+
     setShowAmountModal(false);
     setShowPaymentModal(true);
   };
 
   const handlePaymentSuccess = (reference: string) => {
+    console.log("Payment successful:", reference);
     Alert.alert(
       "Success!",
       `GH₵ ${parseFloat(paymentAmount).toFixed(
@@ -72,10 +81,11 @@ const Home = () => {
     );
     setShowPaymentModal(false);
     setPaymentAmount("");
-    // TODO: verify on backend
+    // TODO: Verify payment on backend and update user credits
   };
 
   const handlePaymentCancel = () => {
+    console.log("Payment cancelled");
     setShowPaymentModal(false);
   };
 
@@ -200,7 +210,7 @@ const Home = () => {
         <TouchableOpacity
           onPress={handleJoinQueue}
           activeOpacity={0.9}
-          className="rounded-2xl overflow-hidden shadow-lg mb-6"
+          className="rounded-2xl overflow-hidden mb-6"
         >
           <LinearGradient
             colors={["#2563EB", "#1E3A8A"]}
@@ -285,27 +295,131 @@ const Home = () => {
         onJoinQueue={handleJoinQueueSubmit}
       />
 
-      {/* ---- AMOUNT INPUT MODAL ---- */}
-      <TopUpAmountModal
+      {/* Amount Input Modal */}
+      <Modal
         visible={showAmountModal}
-        amount={paymentAmount}
-        onAmountChange={setPaymentAmount}
-        onClose={() => {
-          setShowAmountModal(false);
-          setPaymentAmount("");
-        }}
-        onProceed={handleProceedToPayment}
-      />
+        transparent
+        animationType="fade"
+        onRequestClose={handleCloseAmountModal}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          className="flex-1 bg-black/50 justify-center items-center"
+        >
+          <View className="bg-white rounded-3xl w-11/12 max-w-md p-6">
+            {/* Header */}
+            <View className="flex-row items-center justify-between mb-6">
+              <Text className="text-xl font-bold text-gray-800">
+                Top Up Credit
+              </Text>
+              <TouchableOpacity onPress={handleCloseAmountModal}>
+                <MaterialIcons name="close" size={24} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
 
-      {/* ---- PAYSTACK WEBVIEW MODAL ---- */}
-      <PaystackWebView
+            {/* Amount Input */}
+            <View className="mb-6">
+              <Text className="text-sm text-gray-600 mb-2">Enter Amount</Text>
+              <View className="flex-row items-center border-2 border-blue-500 rounded-xl px-4 bg-blue-50">
+                <Text className="text-2xl font-bold text-gray-700 mr-2">
+                  GH₵
+                </Text>
+                <TextInput
+                  value={paymentAmount}
+                  onChangeText={setPaymentAmount}
+                  placeholder="0.00"
+                  keyboardType="decimal-pad"
+                  className="flex-1 text-3xl font-bold text-gray-900 py-4"
+                  placeholderTextColor="#9CA3AF"
+                  autoFocus
+                />
+              </View>
+            </View>
+
+            {/* Quick Amount Buttons */}
+            <View className="mb-6">
+              <Text className="text-sm text-gray-600 mb-3">Quick Select</Text>
+              <View className="flex-row flex-wrap gap-2">
+                {quickAmounts.map((amount) => (
+                  <TouchableOpacity
+                    key={amount}
+                    onPress={() => setPaymentAmount(amount.toString())}
+                    className="bg-gray-100 px-4 py-3 rounded-lg border border-gray-200"
+                    activeOpacity={0.7}
+                  >
+                    <Text className="text-gray-800 font-semibold">
+                      GH₵ {amount}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* Continue Button */}
+            <TouchableOpacity
+              onPress={handleProceedToPayment}
+              activeOpacity={0.9}
+              className="rounded overflow-hidden shadow-md"
+            >
+              <LinearGradient
+                colors={["#2563EB", "#0d38aeff"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                className="py-4 px-8 flex-row justify-center items-center"
+              >
+                <Text className="text-white  font-bold text-xl tracking-wide text-center py-5">
+                  Continue to Payment
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Payment Modal with WebView */}
+      <Modal
         visible={showPaymentModal}
-        amount={paymentAmount}
-        email={USER_EMAIL}
-        publicKey={PAYSTACK_PUBLIC_KEY}
-        onSuccess={handlePaymentSuccess}
-        onCancel={handlePaymentCancel}
-      />
+        animationType="slide"
+        onRequestClose={handlePaymentCancel}
+      >
+        <View className="flex-1 bg-white">
+          {/* Header */}
+          <View className="flex-row items-center justify-between px-6 pt-12 pb-4 border-b border-gray-200 bg-white">
+            <View>
+              <Text className="text-lg font-bold text-gray-800">Payment</Text>
+              <Text className="text-sm text-gray-500">
+                GH₵ {parseFloat(paymentAmount).toFixed(2)}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={handlePaymentCancel}>
+              <MaterialIcons name="close" size={24} color="#6B7280" />
+            </TouchableOpacity>
+          </View>
+
+          {/* WebView for Paystack */}
+          <WebView
+            originWhitelist={["*"]}
+            source={{ html: generatePaystackHTML() }}
+            onMessage={(event) => {
+              try {
+                const data = JSON.parse(event.nativeEvent.data);
+
+                if (data.event === "success") {
+                  handlePaymentSuccess(data.reference);
+                } else if (data.event === "cancelled") {
+                  handlePaymentCancel();
+                }
+              } catch (error) {
+                console.error("Error parsing message:", error);
+              }
+            }}
+            style={{ flex: 1 }}
+            javaScriptEnabled={true}
+            domStorageEnabled={true}
+            startInLoadingState={true}
+          />
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -386,7 +500,20 @@ const ClassicQueueCard = ({ queue, isSelected, onPress, formatWait }: any) => {
 
       <Animated.View style={expandedStyle}>
         <View className="my-4 pt-4 border-t border-gray-100">
-          <View className="flex-row justify-between">
+          {/* Queue Code */}
+          <View className="flex-row justify-between items-center mb-3">
+            <Text className="text-xs text-gray-500 uppercase tracking-wide">
+              Queue Code
+            </Text>
+            <View className="bg-blue-100 px-3 py-1.5 rounded-full">
+              <Text className="text-sm text-blue-700 font-bold tracking-wider">
+                {queue.queueCode}
+              </Text>
+            </View>
+          </View>
+
+          {/* Stats Grid */}
+          <View className="flex-row justify-between mb-3">
             <View className="flex-1">
               <Text className="text-xs text-gray-500 mb-1">People Ahead</Text>
               <Text className="text-base font-semibold text-gray-900">
@@ -407,7 +534,8 @@ const ClassicQueueCard = ({ queue, isSelected, onPress, formatWait }: any) => {
             </View>
           </View>
 
-          <View className="mt-4">
+          {/* Progress Bar */}
+          <View className="mt-2">
             <View className="h-2 bg-gray-100 rounded-full overflow-hidden">
               <View
                 className="h-full bg-blue-600 rounded-full"

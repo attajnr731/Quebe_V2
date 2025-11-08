@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from "react";
+// src/components/JoinQueue.tsx
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -17,8 +18,7 @@ import * as Haptics from "expo-haptics";
 import { organizations } from "../mock/organizations";
 
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
-const MODAL_HEIGHT = SCREEN_HEIGHT * 0.75;
-const PANEL_RADIUS = 24;
+const MODAL_HEIGHT = SCREEN_HEIGHT * 0.68;
 
 interface JoinQueueProps {
   visible: boolean;
@@ -41,66 +41,92 @@ const JoinQueue: React.FC<JoinQueueProps> = ({
   const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
   const [selectedService, setSelectedService] = useState<string | null>(null);
   const [notifyAt, setNotifyAt] = useState("");
-  const [step, setStep] = useState<"org" | "branch" | "service" | "done">(
+  const [step, setStep] = useState<"org" | "branch" | "service" | "review">(
     "org"
   );
-  const [dropdownVisible, setDropdownVisible] = useState(false);
-  const [dropdownType, setDropdownType] = useState<"branch" | "service" | null>(
-    null
-  );
 
-  const translateX = useState(new Animated.Value(0))[0];
-
-  const animateToNext = () => {
-    Animated.timing(translateX, {
-      toValue: -SCREEN_HEIGHT,
-      duration: 400,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const animateBack = () => {
-    Animated.timing(translateX, {
-      toValue: 0,
-      duration: 400,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const handleSelectOrg = (id: string) => {
-    setSelectedOrg(id);
-    setStep("branch");
-    animateToNext();
-  };
-
-  const handleBack = () => {
-    if (step === "branch") {
-      setSelectedOrg(null);
-      setStep("org");
-      animateBack();
-    } else if (step === "service") {
-      setSelectedService(null);
-      setStep("branch");
-    } else if (step === "done") {
-      setStep("service");
-    }
-  };
+  const fadeAnim = useRef(new Animated.Value(1)).current;
 
   const selectedOrgData = organizations.find((o) => o.id === selectedOrg);
+  const selectedBranchData = selectedOrgData?.branches?.find(
+    (b) => b.id === selectedBranch
+  );
+  const selectedServiceData = selectedOrgData?.services?.find(
+    (s) => s.id === selectedService
+  );
 
-  const showNotify =
-    selectedOrgData &&
-    selectedOrgData.type !== "hospital" &&
-    (selectedOrgData.type !== "bank" || selectedService);
+  useEffect(() => {
+    if (!visible) reset();
+  }, [visible]);
+
+  const fadeToStep = (next: typeof step) => {
+    Animated.sequence([
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 150,
+        useNativeDriver: true,
+      }),
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 150,
+        useNativeDriver: true,
+      }),
+    ]).start(() => setStep(next));
+  };
+
+  const goBack = () => {
+    const order = ["org", "branch", "service", "review"] as const;
+    const curIdx = order.indexOf(step);
+    if (curIdx > 0) fadeToStep(order[curIdx - 1]);
+  };
+
+  const handleSelectOrg = (orgId: string) => {
+    setSelectedOrg(orgId);
+    fadeToStep("branch");
+  };
+
+  const handleSelectBranch = (branchId: string) => {
+    setSelectedBranch(branchId);
+    const org = selectedOrgData!;
+    if (org.type === "bank") fadeToStep("service");
+    else fadeToStep("review");
+  };
+
+  const handleSelectService = (serviceId: string) => {
+    setSelectedService(serviceId);
+    fadeToStep("review");
+  };
+
+  const getBranchQueueInfo = (branchId: string) => {
+    const branch = selectedOrgData?.branches?.find((b) => b.id === branchId);
+    if (!selectedOrgData) return { queue: 0, wait: 0 };
+    if (selectedOrgData.type === "bank") {
+      const total =
+        selectedOrgData.services?.reduce((sum, s) => sum + s.queueSize, 0) ?? 0;
+      const weightedWait =
+        selectedOrgData.services?.reduce(
+          (sum, s) => sum + s.avgWaitMin * s.queueSize,
+          0
+        ) ?? 0;
+      const avgWait = total ? Math.round(weightedWait / total) : 0;
+      return { queue: total, wait: avgWait };
+    }
+    return { queue: branch?.queueCount ?? 0, wait: branch?.avgWaitTime ?? 0 };
+  };
+
+  const isJoinDisabled =
+    !selectedOrg ||
+    !selectedBranch ||
+    (selectedOrgData?.type === "bank" && !selectedService);
 
   const handleJoin = () => {
-    if (!selectedOrg) return;
+    if (isJoinDisabled) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     onJoinQueue({
-      orgId: selectedOrg,
-      branchId: selectedBranch || undefined,
+      orgId: selectedOrg!,
+      branchId: selectedBranch!,
       serviceId: selectedService || undefined,
-      notifyAt: notifyAt ? parseInt(notifyAt) : undefined,
+      notifyAt: notifyAt ? parseInt(notifyAt, 10) : undefined,
     });
     reset();
     onClose();
@@ -111,39 +137,213 @@ const JoinQueue: React.FC<JoinQueueProps> = ({
     setSelectedBranch(null);
     setSelectedService(null);
     setNotifyAt("");
-    setStep("org");
     setSearch("");
+    setStep("org");
+  };
+
+  const renderStep = () => {
+    switch (step) {
+      case "org":
+        return (
+          <ScrollView className="px-4 pt-3">
+            <TextInput
+              value={search}
+              onChangeText={setSearch}
+              placeholder="Search organization..."
+              className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-5 mb-3"
+            />
+            {organizations
+              .filter((o) =>
+                o.name.toLowerCase().includes(search.toLowerCase())
+              )
+              .map((org) => (
+                <TouchableOpacity
+                  key={org.id}
+                  onPress={() => handleSelectOrg(org.id)}
+                  className="border border-gray-200 rounded-lg px-3 py-5 flex-row items-center justify-between mb-2 bg-white"
+                >
+                  <View className="flex-row items-center flex-1">
+                    <MaterialIcons
+                      name={org.logo as any}
+                      size={26}
+                      color="#2563EB"
+                    />
+                    <View className="ml-2 flex-1">
+                      <Text className="font-semibold text-gray-900">
+                        {org.name}
+                      </Text>
+                      <Text className="text-[11px] text-gray-500 uppercase">
+                        {org.type}
+                      </Text>
+                    </View>
+                  </View>
+                  <MaterialIcons
+                    name="chevron-right"
+                    size={22}
+                    color="#9CA3AF"
+                  />
+                </TouchableOpacity>
+              ))}
+          </ScrollView>
+        );
+
+      case "branch":
+        return (
+          <ScrollView className="px-4 pt-3">
+            <Text className="text-base font-semibold text-gray-800 mb-3">
+              Select Branch
+            </Text>
+            {selectedOrgData?.branches?.map((branch) => {
+              const { queue, wait } = getBranchQueueInfo(branch.id);
+              return (
+                <TouchableOpacity
+                  key={branch.id}
+                  onPress={() => handleSelectBranch(branch.id)}
+                  className={`border rounded-lg p-3 mb-2 ${
+                    selectedBranch === branch.id
+                      ? "border-blue-500 bg-blue-50"
+                      : "border-gray-200 bg-white"
+                  }`}
+                >
+                  <View className="flex-row justify-between items-center">
+                    <View className="flex-1">
+                      <Text className="font-semibold text-gray-900">
+                        {branch.name}
+                      </Text>
+                      <Text className="text-sm text-gray-600 mt-1">
+                        {queue} in queue • {wait} min wait
+                      </Text>
+                    </View>
+                    {selectedBranch === branch.id && (
+                      <MaterialIcons
+                        name="check-circle"
+                        size={22}
+                        color="#2563EB"
+                      />
+                    )}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        );
+
+      case "service":
+        return (
+          <ScrollView className="px-4 pt-3">
+            <Text className="text-base font-semibold text-gray-800 mb-3">
+              Select Service
+            </Text>
+            {selectedOrgData?.services?.map((service) => (
+              <TouchableOpacity
+                key={service.id}
+                onPress={() => handleSelectService(service.id)}
+                className={`border rounded-lg p-3 mb-2 ${
+                  selectedService === service.id
+                    ? "border-blue-500 bg-blue-50"
+                    : "border-gray-200 bg-white"
+                }`}
+              >
+                <View className="flex-row justify-between items-center">
+                  <View>
+                    <Text className="font-semibold text-gray-900">
+                      {service.name}
+                    </Text>
+                    <Text className="text-sm text-gray-600 mt-1">
+                      {service.queueSize} waiting • ~{service.avgWaitMin} min
+                    </Text>
+                  </View>
+                  {selectedService === service.id && (
+                    <MaterialIcons
+                      name="check-circle"
+                      size={22}
+                      color="#2563EB"
+                    />
+                  )}
+                </View>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        );
+
+      case "review":
+        return (
+          <ScrollView className="px-4 pt-3 pb-20">
+            <Text className="text-base font-semibold text-gray-800 mb-3">
+              Review
+            </Text>
+
+            <View className="bg-gray-50 rounded-lg p-3 mb-2">
+              <Text className="text-sm text-gray-600">Organization</Text>
+              <Text className="font-semibold text-gray-900">
+                {selectedOrgData?.name}
+              </Text>
+            </View>
+
+            {selectedBranchData && (
+              <View className="bg-gray-50 rounded-lg p-3 mb-2">
+                <Text className="text-sm text-gray-600">Branch</Text>
+                <Text className="font-semibold text-gray-900">
+                  {selectedBranchData.name}
+                </Text>
+              </View>
+            )}
+
+            {selectedServiceData && (
+              <View className="bg-gray-50 rounded-lg p-3 mb-2">
+                <Text className="text-sm text-gray-600">Service</Text>
+                <Text className="font-semibold text-gray-900">
+                  {selectedServiceData.name}
+                </Text>
+              </View>
+            )}
+
+            <View className="mt-2">
+              <Text className="font-medium text-gray-700 mb-1">
+                Notify me when I’m at position
+              </Text>
+              <TextInput
+                value={notifyAt}
+                onChangeText={(t) =>
+                  setNotifyAt(t.replace(/[^0-9]/g, "").slice(0, 3))
+                }
+                keyboardType="number-pad"
+                className="border border-gray-300 rounded-lg p-3 text-lg"
+              />
+              <Text className="text-[11px] text-gray-500 mt-1 ml-1">
+                SMS notification when your turn is near
+              </Text>
+            </View>
+          </ScrollView>
+        );
+    }
   };
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-    >
+    <Modal visible={visible} transparent animationType="fade">
       <View className="flex-1 bg-black/50 justify-end">
         <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
           className="flex-1 justify-end"
         >
-          <Animated.View
-            style={{
-              transform: [{ translateY: 0 }],
-              height: MODAL_HEIGHT,
-            }}
-            className="bg-white rounded-t-3xl"
+          <View
+            className="bg-white rounded-t-2xl"
+            style={{ height: MODAL_HEIGHT }}
           >
             {/* Header */}
-            <View className="flex-row justify-between items-center px-6 pt-5 pb-3 border-b border-gray-100">
+            <View className="flex-row justify-between items-center px-4 py-3 border-b border-gray-100">
               {step !== "org" ? (
-                <TouchableOpacity onPress={handleBack}>
-                  <MaterialIcons name="arrow-back" size={24} color="#2563EB" />
+                <TouchableOpacity onPress={goBack} hitSlop={10}>
+                  <MaterialIcons
+                    name="arrow-back-ios"
+                    size={20}
+                    color="#2563EB"
+                  />
                 </TouchableOpacity>
               ) : (
-                <View className="w-6" />
+                <View className="w-5" />
               )}
-              <Text className="text-lg font-bold text-gray-800">
+              <Text className="text-base font-bold text-gray-800">
                 Join Queue
               </Text>
               <TouchableOpacity onPress={onClose}>
@@ -151,139 +351,25 @@ const JoinQueue: React.FC<JoinQueueProps> = ({
               </TouchableOpacity>
             </View>
 
-            {/* Body */}
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ padding: 24 }}
-            >
-              {step === "org" && (
-                <>
-                  <TextInput
-                    value={search}
-                    onChangeText={setSearch}
-                    placeholder="Search organization..."
-                    className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3.5 mb-4"
-                  />
-                  {organizations
-                    .filter((o) =>
-                      o.name.toLowerCase().includes(search.toLowerCase())
-                    )
-                    .map((org) => (
-                      <TouchableOpacity
-                        key={org.id}
-                        onPress={() => handleSelectOrg(org.id)}
-                        className="border border-gray-200 rounded-xl p-4 flex-row items-center justify-between mb-3 bg-white"
-                      >
-                        <View className="flex-row items-center">
-                          <MaterialIcons
-                            name={org.logo as any}
-                            size={28}
-                            color="#2563EB"
-                          />
-                          <View className="ml-3">
-                            <Text className="font-semibold text-gray-900">
-                              {org.name}
-                            </Text>
-                            <Text className="text-xs text-gray-500">
-                              {org.type.toUpperCase()}
-                            </Text>
-                          </View>
-                        </View>
-                        <MaterialIcons
-                          name="chevron-right"
-                          size={22}
-                          color="#9CA3AF"
-                        />
-                      </TouchableOpacity>
-                    ))}
-                </>
-              )}
-
-              {step === "branch" && selectedOrgData && (
-                <>
-                  {selectedOrgData.branches && (
-                    <>
-                      <Text className="font-semibold text-gray-800 mb-2">
-                        Select Branch
-                      </Text>
-                      <TouchableOpacity
-                        onPress={() => {
-                          setDropdownType("branch");
-                          setDropdownVisible(true);
-                        }}
-                        className="border border-gray-200 rounded-xl px-4 py-4 flex-row justify-between items-center mb-4 bg-gray-50"
-                      >
-                        <Text className="text-gray-700">
-                          {selectedBranch
-                            ? selectedOrgData.branches.find(
-                                (b) => b.id === selectedBranch
-                              )?.name
-                            : "Choose a branch"}
-                        </Text>
-                        <MaterialIcons
-                          name="arrow-drop-down"
-                          size={24}
-                          color="#2563EB"
-                        />
-                      </TouchableOpacity>
-                    </>
-                  )}
-
-                  {selectedOrgData.type === "bank" && (
-                    <>
-                      <Text className="font-semibold text-gray-800 mb-2">
-                        Select Service
-                      </Text>
-                      <TouchableOpacity
-                        onPress={() => {
-                          setDropdownType("service");
-                          setDropdownVisible(true);
-                        }}
-                        className="border border-gray-200 rounded-xl px-4 py-4 flex-row justify-between items-center mb-4 bg-gray-50"
-                      >
-                        <Text className="text-gray-700">
-                          {selectedService
-                            ? selectedOrgData.services?.find(
-                                (s) => s.id === selectedService
-                              )?.name
-                            : "Choose a service"}
-                        </Text>
-                        <MaterialIcons
-                          name="arrow-drop-down"
-                          size={24}
-                          color="#2563EB"
-                        />
-                      </TouchableOpacity>
-                    </>
-                  )}
-
-                  {showNotify && (
-                    <View className="mt-6">
-                      <Text className="font-semibold text-gray-700 mb-2">
-                        Notify me when I’m #{notifyAt || "?"} (optional)
-                      </Text>
-                      <TextInput
-                        value={notifyAt}
-                        onChangeText={setNotifyAt}
-                        keyboardType="number-pad"
-                        placeholder="e.g., 3"
-                        className="border border-gray-200 rounded-xl px-4 py-3.5 bg-gray-50"
-                      />
-                    </View>
-                  )}
-                </>
-              )}
-            </ScrollView>
+            {/* Step Content */}
+            <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
+              {renderStep()}
+            </Animated.View>
 
             {/* Join Button */}
             <View className="">
               <TouchableOpacity
                 onPress={handleJoin}
+                disabled={isJoinDisabled}
                 activeOpacity={0.9}
-                className="rounded overflow-hidden shadow-md"
+                className=" overflow-hidden "
               >
                 <LinearGradient
-                  colors={["#2563EB", "#1E3A8A"]}
+                  colors={
+                    isJoinDisabled
+                      ? ["#9CA3AF", "#6B7280"]
+                      : ["#2563EB", "#1D4ED8"]
+                  }
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                   className="py-4 px-8 flex-row justify-center items-center"
@@ -294,52 +380,8 @@ const JoinQueue: React.FC<JoinQueueProps> = ({
                 </LinearGradient>
               </TouchableOpacity>
             </View>
-          </Animated.View>
+          </View>
         </KeyboardAvoidingView>
-
-        {/* Dropdown Modal */}
-        <Modal
-          visible={dropdownVisible}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setDropdownVisible(false)}
-        >
-          <TouchableOpacity
-            activeOpacity={1}
-            onPressOut={() => setDropdownVisible(false)}
-            className="flex-1 bg-black/40 justify-center items-center"
-          >
-            <View className="bg-white rounded-2xl w-4/5 p-5">
-              {dropdownType === "branch" &&
-                selectedOrgData?.branches?.map((b) => (
-                  <TouchableOpacity
-                    key={b.id}
-                    onPress={() => {
-                      setSelectedBranch(b.id);
-                      setDropdownVisible(false);
-                    }}
-                    className="p-3 border-b border-gray-100"
-                  >
-                    <Text className="text-gray-800">{b.name}</Text>
-                  </TouchableOpacity>
-                ))}
-
-              {dropdownType === "service" &&
-                selectedOrgData?.services?.map((s) => (
-                  <TouchableOpacity
-                    key={s.id}
-                    onPress={() => {
-                      setSelectedService(s.id);
-                      setDropdownVisible(false);
-                    }}
-                    className="p-3 border-b border-gray-100"
-                  >
-                    <Text className="text-gray-800">{s.name}</Text>
-                  </TouchableOpacity>
-                ))}
-            </View>
-          </TouchableOpacity>
-        </Modal>
       </View>
     </Modal>
   );
