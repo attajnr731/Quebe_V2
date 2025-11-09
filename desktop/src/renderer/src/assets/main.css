@@ -10,4 +10,9 @@ body {
 
 * {
   box-sizing: border-box;
+  font-family: 'Outfit';
+}
+
+.logo {
+  font-family: 'Pacifico';
 }
