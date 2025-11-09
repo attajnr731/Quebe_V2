@@ -1,4 +1,3 @@
-// models/Client.js
 import mongoose from "mongoose";
 
 const { Schema, model } = mongoose;
@@ -10,6 +9,7 @@ const ClientSchema = new Schema(
     password: { type: String, required: true },
     email: { type: String, unique: true, sparse: true },
     photoURL: { type: String },
+    credit: { type: Number, default: 0 },
   },
   {
     timestamps: true,

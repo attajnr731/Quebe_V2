@@ -30,6 +30,7 @@ export const clientSignup = async (req, res) => {
       password: hashedPassword,
       email,
       photoURL,
+      credit: 0, // optional, default already set in schema
     });
 
     await client.save();
@@ -42,6 +43,7 @@ export const clientSignup = async (req, res) => {
         phone: client.phone,
         email: client.email,
         photoURL: client.photoURL,
+        credit: client.credit, // ✅ include credit
       },
     });
   } catch (error) {
@@ -90,6 +92,7 @@ export const clientLogin = async (req, res) => {
         phone: client.phone,
         email: client.email,
         photoURL: client.photoURL,
+        credit: client.credit, // ✅ include credit
       },
       token,
     });

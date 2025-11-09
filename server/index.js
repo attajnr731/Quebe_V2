@@ -7,6 +7,7 @@ import { connectDB } from "./config/db.js";
 import organizationRoutes from "./routes/organizationRoutes.js"; // ✅ import route
 import branchRoutes from "./routes/branchRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
+import clientRoutes from "./routes/clientRoutes.js";
 
 dotenv.config();
 
@@ -15,7 +16,14 @@ const server = http.createServer(app);
 const io = new SocketServer(server, { cors: { origin: "*" } });
 
 // ✅ CORS setup
-app.use(cors({ origin: "*", credentials: true }));
+app.use(
+  cors({
+    origin: "http://localhost:5173", // your frontend origin
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-OTP", "X-Email"],
+    credentials: true,
+  })
+);
 
 // CRITICAL: Parse JSON bodies
 app.use(express.json()); // ADD THIS
@@ -30,6 +38,7 @@ connectDB();
 app.use("/api/organizations", organizationRoutes);
 app.use("/api/branches", branchRoutes);
 app.use("/api/auth", authRoutes);
+app.use("/api/clients", clientRoutes);
 
 // test
 app.get("/", (req, res) => res.send("Server is running..."));
