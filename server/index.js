@@ -15,14 +15,7 @@ const server = http.createServer(app);
 const io = new SocketServer(server, { cors: { origin: "*" } });
 
 // ✅ CORS setup
-app.use(
-  cors({
-    origin: "http://localhost:5173", // your frontend origin
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-OTP", "X-Email"],
-    credentials: true,
-  })
-);
+app.use(cors({ origin: "*", credentials: true }));
 
 // CRITICAL: Parse JSON bodies
 app.use(express.json()); // ADD THIS
