@@ -5,9 +5,9 @@ import { MaterialIcons } from "@expo/vector-icons";
 
 type Props = {
   visible: boolean;
-  amount: string; // GHS amount (e.g. "25.50")
-  email: string; // user email
-  publicKey: string; // Paystack public key
+  amount: string;
+  email: string;
+  publicKey: string;
   onSuccess: (reference: string) => void;
   onCancel: () => void;
 };

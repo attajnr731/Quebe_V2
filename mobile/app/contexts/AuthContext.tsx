@@ -10,7 +10,7 @@ type AuthContextType = {
   login: (token: string, user: any) => Promise<void>;
   continueAsGuest: () => Promise<void>;
   logout: () => Promise<void>;
-  refreshUserData: () => Promise<void>; // Add this
+  refreshUserData: () => Promise<void>;
   isLoading: boolean;
 };
 
@@ -125,7 +125,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         login,
         continueAsGuest,
         logout,
-        refreshUserData, // Add this
+        refreshUserData,
         isLoading,
       }}
     >

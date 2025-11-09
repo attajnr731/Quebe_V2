@@ -12,7 +12,7 @@ export default function ScreensLayout() {
       <Tabs
         screenOptions={{
           headerShown: false,
-          tabBarStyle: { display: "none" }, // Hide tab bar for guests
+          tabBarStyle: { display: "none" },
         }}
       >
         <Tabs.Screen name="joinQueue" />
