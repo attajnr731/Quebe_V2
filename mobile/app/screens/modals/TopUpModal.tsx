@@ -55,7 +55,8 @@ const TopUpModal: React.FC<TopUpModalProps> = ({
     const paystackKey = "pk_test_c475be44704411a11ddded174ab54f75aaa9f728";
     const email = userData?.email || "user@example.com";
     const amount = parseFloat(paymentAmount);
-    const reference = `QUEUE_${Date.now()}_${userData?._id || "guest"}`;
+    // Don't pre-generate reference - let Paystack generate it
+    // We'll use the reference from the callback response
 
     return `
 <!DOCTYPE html>
