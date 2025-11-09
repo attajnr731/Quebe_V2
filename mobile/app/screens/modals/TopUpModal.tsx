@@ -14,7 +14,7 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { MaterialIcons } from "@expo/vector-icons";
 import { WebView } from "react-native-webview";
-import { getCurrentUser } from "../../services/clientService"; // Add this import
+import { verifyPaymentAndAddCredit } from "../../services/clientService";
 import { useAuth } from "../../contexts/AuthContext";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -35,6 +35,7 @@ const TopUpModal: React.FC<TopUpModalProps> = ({
   const [paymentAmount, setPaymentAmount] = useState("");
   const [showPaymentWebView, setShowPaymentWebView] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [verificationStatus, setVerificationStatus] = useState("");
   const quickAmounts = [5, 10, 20, 50];
 
   const handleProceedToPayment = () => {
@@ -131,75 +132,144 @@ const TopUpModal: React.FC<TopUpModalProps> = ({
       if (data.event === "success") {
         setShowPaymentWebView(false);
         setIsVerifying(true);
+        setVerificationStatus("Verifying payment with Paystack...");
 
-        // Poll for credit update (webhook will handle the actual update)
-        let attempts = 0;
-        const maxAttempts = 10;
+        const amount = parseFloat(paymentAmount);
 
-        while (attempts < maxAttempts) {
-          await new Promise((resolve) => setTimeout(resolve, 2000)); // Wait 2s between attempts
+        console.log("Payment successful, starting verification:", {
+          reference: data.reference,
+          amount,
+        });
 
-          const userResult = await getCurrentUser();
+        // STRATEGY: Try verification with exponential backoff
+        // Sometimes Paystack webhooks arrive faster, sometimes verification API is faster
+        const maxAttempts = 5;
+        let verificationSuccessful = false;
 
-          if (userResult.success && userResult.client) {
-            // Check if credit increased
-            const newCredit = userResult.client.credit;
-            const oldCredit = userData?.credit || 0;
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          try {
+            console.log(`Verification attempt ${attempt + 1}/${maxAttempts}`);
+            setVerificationStatus(
+              `Verifying payment... (${attempt + 1}/${maxAttempts})`
+            );
 
-            if (newCredit > oldCredit) {
-              // Credit was updated!
-              await AsyncStorage.setItem(
-                "userData",
-                JSON.stringify(userResult.client)
-              );
-              await refreshUserData();
+            // Call your backend verification endpoint
+            const result = await verifyPaymentAndAddCredit(
+              data.reference,
+              amount
+            );
+
+            console.log("Verification result:", result);
+
+            if (result.success) {
+              verificationSuccessful = true;
+
+              // Update local user data
+              if (result.client) {
+                await AsyncStorage.setItem(
+                  "userData",
+                  JSON.stringify(result.client)
+                );
+                await refreshUserData();
+              }
 
               setIsVerifying(false);
+              setVerificationStatus("");
+
               Alert.alert(
                 "Success! 🎉",
-                `GH₵ ${parseFloat(paymentAmount).toFixed(
-                  2
-                )} has been added to your account`,
-                [{ text: "OK" }]
+                `GH₵ ${amount.toFixed(2)} has been added to your account`,
+                [
+                  {
+                    text: "OK",
+                    onPress: () => {
+                      onPaymentSuccess(data.reference, amount);
+                      setPaymentAmount("");
+                    },
+                  },
+                ]
               );
 
-              onPaymentSuccess(data.reference, parseFloat(paymentAmount));
-              setPaymentAmount("");
-              return;
+              break;
+            } else {
+              // If verification failed but it's not the last attempt, wait and retry
+              if (attempt < maxAttempts - 1) {
+                console.log(
+                  `Verification failed, waiting before retry: ${result.message}`
+                );
+                // Exponential backoff: 2s, 4s, 8s, 16s
+                const waitTime = Math.pow(2, attempt + 1) * 1000;
+                await new Promise((resolve) => setTimeout(resolve, waitTime));
+              } else {
+                // Last attempt failed
+                throw new Error(result.message || "Verification failed");
+              }
+            }
+          } catch (error: any) {
+            console.error(`Attempt ${attempt + 1} error:`, error);
+
+            if (attempt === maxAttempts - 1) {
+              // All attempts exhausted
+              setIsVerifying(false);
+              setVerificationStatus("");
+
+              Alert.alert(
+                "Payment Processing",
+                "We couldn't verify your payment immediately, but don't worry! " +
+                  "Your payment is being processed in the background. " +
+                  "Please check your balance in a few minutes. " +
+                  "If the credit doesn't appear within 5 minutes, please contact support.",
+                [
+                  {
+                    text: "OK",
+                    onPress: () => {
+                      onClose();
+                      setPaymentAmount("");
+                    },
+                  },
+                ]
+              );
             }
           }
-
-          attempts++;
         }
 
-        // Timeout - but payment might still process
-        setIsVerifying(false);
-        Alert.alert(
-          "Payment Processing",
-          "Your payment is being processed. Please check your balance in a few moments.",
-          [{ text: "OK" }]
-        );
+        if (!verificationSuccessful) {
+          console.log(
+            "Verification unsuccessful after all attempts, but payment may still process via webhook"
+          );
+        }
       } else if (data.event === "cancelled") {
         setShowPaymentWebView(false);
         onPaymentCancel();
+        Alert.alert("Payment Cancelled", "You cancelled the payment.");
       }
     } catch (error) {
-      console.error("Error handling payment:", error);
+      console.error("Error handling payment message:", error);
       setIsVerifying(false);
+      setVerificationStatus("");
+
+      Alert.alert(
+        "Error",
+        "Something went wrong processing your payment. Please contact support if your account wasn't credited.",
+        [{ text: "OK", onPress: onClose }]
+      );
     }
   };
 
   if (isVerifying) {
     return (
       <Modal visible transparent animationType="fade">
-        <View className="flex-1 bg-black/50 justify-center items-center">
-          <View className="bg-white rounded-3xl p-8 items-center">
+        <View className="flex-1 bg-black/50 justify-center items-center px-6">
+          <View className="bg-white rounded-3xl p-8 items-center w-full max-w-sm">
             <ActivityIndicator size="large" color="#2563EB" />
-            <Text className="text-gray-700 mt-4 text-lg font-semibold">
-              Verifying Payment...
+            <Text className="text-gray-700 mt-4 text-lg font-semibold text-center">
+              {verificationStatus || "Verifying Payment..."}
             </Text>
-            <Text className="text-gray-500 mt-2 text-center">
-              Please wait while we confirm your transaction
+            <Text className="text-gray-500 mt-2 text-center text-sm">
+              Please wait while we confirm your transaction with Paystack
+            </Text>
+            <Text className="text-gray-400 mt-3 text-center text-xs">
+              This may take up to 30 seconds
             </Text>
           </View>
         </View>
@@ -276,7 +346,7 @@ const TopUpModal: React.FC<TopUpModalProps> = ({
                 end={{ x: 1, y: 1 }}
                 className="py-4 px-8"
               >
-                <Text className="text-white font-bold text-lg text-center">
+                <Text className="text-white font-bold text-lg text-center py-5">
                   Continue to Payment
                 </Text>
               </LinearGradient>
