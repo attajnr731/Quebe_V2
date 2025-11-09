@@ -51,7 +51,7 @@ const TopUpModal: React.FC<TopUpModalProps> = ({
   };
 
   const generatePaystackHTML = () => {
-    const paystackKey = "pk_test_c475be44704411a11ddded174ab54f75aaa9f728";
+    const paystackKey = "sk_test_bf252f8ef40cfaf76f4cae5694ad734ffcb7cf57";
     const email = userData?.email || "user@example.com";
     const amount = parseFloat(paymentAmount);
     const reference = `QUEUE_${Date.now()}_${userData?._id || "guest"}`;

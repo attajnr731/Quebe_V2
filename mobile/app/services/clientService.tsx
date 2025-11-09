@@ -30,6 +30,8 @@ export const verifyPaymentAndAddCredit = async (
       };
     }
 
+    console.log("Verifying payment:", { reference, amount });
+
     const response = await axios.post(
       `${API_BASE}/clients/verify-payment`,
       {
@@ -41,17 +43,27 @@ export const verifyPaymentAndAddCredit = async (
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
+        timeout: 15000, // 15 second timeout
       }
     );
 
+    console.log("Verification response:", response.data);
     return { success: true, ...response.data };
   } catch (error: any) {
-    console.error("Payment verification error:", error.response?.data || error);
+    console.error("Payment verification error:", {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status,
+    });
+
     return {
       success: false,
       message:
         error.response?.data?.message ||
+        error.response?.data?.details ||
+        error.message ||
         "Failed to verify payment. Please contact support.",
+      details: error.response?.data,
     };
   }
 };
