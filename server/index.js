@@ -3,41 +3,42 @@ import http from "http";
 import { Server as SocketServer } from "socket.io";
 import cors from "cors";
 import dotenv from "dotenv";
-import { connectDB } from "./config/db.js"; // <- import db connection
+import { connectDB } from "./config/db.js";
+import organizationRoutes from "./routes/organizationRoutes.js"; // ✅ import route
+import branchRoutes from "./routes/branchRoutes.js";
 
 dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
+const io = new SocketServer(server, { cors: { origin: "*" } });
 
-const io = new SocketServer(server, {
-  cors: { origin: "*", methods: ["GET", "POST"] },
-});
+// ✅ CORS setup
+app.use(
+  cors({
+    origin: "http://localhost:5173", // your frontend origin
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-OTP", "X-Email"],
+    credentials: true,
+  })
+);
 
-app.use(cors());
-app.use(express.json());
+// CRITICAL: Parse JSON bodies
+app.use(express.json()); // ADD THIS
 
-// --- Connect to MongoDB ---
+// Parse URL-encoded (for forms) — optional but safe
+app.use(express.urlencoded({ extended: true }));
+
+// connect DB
 connectDB();
 
-// --- Real-time logic ---
-io.on("connection", (socket) => {
-  console.log("🟢 Client connected:", socket.id);
+// routes
+app.use("/api/organizations", organizationRoutes);
+app.use("/api/branches", branchRoutes);
 
-  socket.on("joinQueue", (data) => {
-    console.log("User joined queue:", data);
-    io.emit("queueUpdated", { message: "Queue updated", data });
-  });
-
-  socket.on("disconnect", () => {
-    console.log("🔴 Client disconnected:", socket.id);
-  });
-});
-
-// --- Simple test route ---
+// test
 app.get("/", (req, res) => res.send("Server is running..."));
 
-// --- Start Server ---
+// start server
 const PORT = process.env.PORT || 5000;
-
 server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
