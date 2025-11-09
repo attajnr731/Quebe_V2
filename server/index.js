@@ -6,6 +6,7 @@ import dotenv from "dotenv";
 import { connectDB } from "./config/db.js";
 import organizationRoutes from "./routes/organizationRoutes.js"; // ✅ import route
 import branchRoutes from "./routes/branchRoutes.js";
+import authRoutes from "./routes/authRoutes.js";
 
 dotenv.config();
 
@@ -35,6 +36,7 @@ connectDB();
 // routes
 app.use("/api/organizations", organizationRoutes);
 app.use("/api/branches", branchRoutes);
+app.use("/api/auth", authRoutes);
 
 // test
 app.get("/", (req, res) => res.send("Server is running..."));
