@@ -1,24 +1,12 @@
 // mobile/app/screens/tabs/home.tsx
 import React, { useState } from "react";
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  Dimensions,
-  Alert,
-  Modal,
-  TextInput,
-  KeyboardAvoidingView,
-  Platform,
-} from "react-native";
+import { View, Text, TouchableOpacity, Dimensions, Alert } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import { WebView } from "react-native-webview";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
   withTiming,
   withDelay,
   Easing,
@@ -58,23 +46,6 @@ const Home = () => {
     setShowAmountModal(true);
   };
 
-  const handleProceedToPayment = () => {
-    const amount = parseFloat(paymentAmount);
-
-    if (!paymentAmount || isNaN(amount) || amount <= 0) {
-      Alert.alert("Invalid Amount", "Please enter a valid amount");
-      return;
-    }
-
-    if (amount < 1) {
-      Alert.alert("Minimum Amount", "Minimum top-up amount is GH₵ 1.00");
-      return;
-    }
-
-    setShowAmountModal(false);
-    setShowPaymentModal(true);
-  };
-
   const handlePaymentSuccess = (reference: string, amount: number) => {
     console.log("Payment successful:", reference, amount);
   };
@@ -82,11 +53,6 @@ const Home = () => {
   const handlePaymentCancel = () => {
     console.log("Payment cancelled");
     setShowPaymentModal(false);
-  };
-
-  const handleCloseAmountModal = () => {
-    setShowAmountModal(false);
-    setPaymentAmount("");
   };
 
   const userCredits = user?.credit || 0;
@@ -99,7 +65,6 @@ const Home = () => {
   };
 
   // Quick amount buttons
-  const quickAmounts = [5, 10, 20, 50, 100];
 
   return (
     <View className="flex-1 bg-gray-50">

@@ -189,3 +189,32 @@ export const updateClientCredit = async (req, res) => {
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
+
+export const getCurrentClient = async (req, res) => {
+  try {
+    const userId = req.userId;
+
+    const client = await Client.findById(userId);
+    if (!client) {
+      return res.status(404).json({
+        success: false,
+        message: "Client not found",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      client: {
+        _id: client._id,
+        name: client.name,
+        phone: client.phone,
+        email: client.email,
+        photoURL: client.photoURL,
+        credit: client.credit,
+      },
+    });
+  } catch (error) {
+    console.error("Error getting current client:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};

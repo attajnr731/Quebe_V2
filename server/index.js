@@ -8,6 +8,7 @@ import organizationRoutes from "./routes/organizationRoutes.js"; // ✅ import r
 import branchRoutes from "./routes/branchRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import clientRoutes from "./routes/clientRoutes.js";
+import webhookRoutes from "./routes/webhookRoutes.js";
 
 dotenv.config();
 
@@ -35,6 +36,7 @@ app.use(express.urlencoded({ extended: true }));
 connectDB();
 
 // routes
+app.use("/api/webhooks", webhookRoutes);
 app.use("/api/organizations", organizationRoutes);
 app.use("/api/branches", branchRoutes);
 app.use("/api/auth", authRoutes);

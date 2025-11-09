@@ -14,7 +14,7 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { MaterialIcons } from "@expo/vector-icons";
 import { WebView } from "react-native-webview";
-import { verifyPaymentAndAddCredit } from "../../services/clientService";
+import { getCurrentUser } from "../../services/clientService"; // Add this import
 import { useAuth } from "../../contexts/AuthContext";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -132,51 +132,60 @@ const TopUpModal: React.FC<TopUpModalProps> = ({
         setShowPaymentWebView(false);
         setIsVerifying(true);
 
-        // Verify payment with backend
-        const result = await verifyPaymentAndAddCredit(
-          data.reference,
-          parseFloat(paymentAmount)
-        );
+        // Poll for credit update (webhook will handle the actual update)
+        let attempts = 0;
+        const maxAttempts = 10;
 
-        setIsVerifying(false);
+        while (attempts < maxAttempts) {
+          await new Promise((resolve) => setTimeout(resolve, 2000)); // Wait 2s between attempts
 
-        if (result.success) {
-          // Update user data in AsyncStorage
-          if (result.client) {
-            await AsyncStorage.setItem(
-              "userData",
-              JSON.stringify(result.client)
-            );
-            await refreshUserData();
+          const userResult = await getCurrentUser();
+
+          if (userResult.success && userResult.client) {
+            // Check if credit increased
+            const newCredit = userResult.client.credit;
+            const oldCredit = userData?.credit || 0;
+
+            if (newCredit > oldCredit) {
+              // Credit was updated!
+              await AsyncStorage.setItem(
+                "userData",
+                JSON.stringify(userResult.client)
+              );
+              await refreshUserData();
+
+              setIsVerifying(false);
+              Alert.alert(
+                "Success! 🎉",
+                `GH₵ ${parseFloat(paymentAmount).toFixed(
+                  2
+                )} has been added to your account`,
+                [{ text: "OK" }]
+              );
+
+              onPaymentSuccess(data.reference, parseFloat(paymentAmount));
+              setPaymentAmount("");
+              return;
+            }
           }
 
-          Alert.alert(
-            "Success! 🎉",
-            `GH₵ ${parseFloat(paymentAmount).toFixed(
-              2
-            )} has been added to your account`,
-            [{ text: "OK" }]
-          );
-
-          onPaymentSuccess(data.reference, parseFloat(paymentAmount));
-          setPaymentAmount("");
-        } else {
-          Alert.alert(
-            "Verification Failed",
-            result.message ||
-              "Could not verify payment. Please contact support.",
-            [{ text: "OK" }]
-          );
+          attempts++;
         }
+
+        // Timeout - but payment might still process
+        setIsVerifying(false);
+        Alert.alert(
+          "Payment Processing",
+          "Your payment is being processed. Please check your balance in a few moments.",
+          [{ text: "OK" }]
+        );
       } else if (data.event === "cancelled") {
         setShowPaymentWebView(false);
         onPaymentCancel();
       }
     } catch (error) {
-      console.error("Error handling payment message:", error);
-      setShowPaymentWebView(false);
+      console.error("Error handling payment:", error);
       setIsVerifying(false);
-      Alert.alert("Error", "An error occurred processing your payment.");
     }
   };
 
@@ -267,7 +276,7 @@ const TopUpModal: React.FC<TopUpModalProps> = ({
                 end={{ x: 1, y: 1 }}
                 className="py-4 px-8"
               >
-                <Text className="text-white font-bold text-lg text-center py-5">
+                <Text className="text-white font-bold text-lg text-center">
                   Continue to Payment
                 </Text>
               </LinearGradient>
