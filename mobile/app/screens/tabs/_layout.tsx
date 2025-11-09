@@ -1,7 +1,29 @@
+// mobile/app/screens/tabs/_layout.tsx
 import { Tabs } from "expo-router";
 import { MaterialIcons } from "@expo/vector-icons";
+import { useAuth } from "../../contexts/AuthContext";
 
 export default function ScreensLayout() {
+  const { isGuest } = useAuth();
+
+  if (isGuest) {
+    // Guest users only see JoinQueue tab
+    return (
+      <Tabs
+        screenOptions={{
+          headerShown: false,
+          tabBarStyle: { display: "none" }, // Hide tab bar for guests
+        }}
+      >
+        <Tabs.Screen name="joinQueue" />
+        <Tabs.Screen name="home" options={{ href: null }} />
+        <Tabs.Screen name="history" options={{ href: null }} />
+        <Tabs.Screen name="me" options={{ href: null }} />
+      </Tabs>
+    );
+  }
+
+  // Authenticated users see all tabs
   return (
     <Tabs
       screenOptions={{
@@ -38,6 +60,7 @@ export default function ScreensLayout() {
           ),
         }}
       />
+      <Tabs.Screen name="joinQueue" options={{ href: null }} />
     </Tabs>
   );
 }

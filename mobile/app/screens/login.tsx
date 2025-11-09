@@ -1,3 +1,4 @@
+// mobile/app/screens/login.tsx
 import React, { useState } from "react";
 import {
   View,
@@ -8,27 +9,68 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
+import { loginClient } from "../services/authService";
+import { useAuth } from "../contexts/AuthContext";
 
 const Login = () => {
   const router = useRouter();
+  const { login, continueAsGuest } = useAuth();
   const [phoneNumber, setPhoneNumber] = useState("");
   const [password, setPassword] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [isGuestLoading, setIsGuestLoading] = useState(false);
 
-  const handleLogin = () => {
-    console.log("Login with:", phoneNumber, password);
+  // mobile/app/screens/login.tsx - Update the handleLogin function
+  const handleLogin = async () => {
+    if (!phoneNumber || !password) {
+      Alert.alert("Error", "Please enter both phone number and password.");
+      return;
+    }
 
-    // Simple validation
-    if (phoneNumber && password) {
-      router.replace("/screens/tabs/home");
-    } else {
-      alert("Please enter both phone number and password.");
+    setIsLoading(true);
+
+    try {
+      console.log("Starting login...");
+      const data = await loginClient(phoneNumber, password);
+      console.log("Login response:", data);
+
+      if (!data.success) {
+        Alert.alert("Login Failed", data.message || "Invalid credentials");
+        return;
+      }
+
+      console.log("Login successful:", data);
+
+      // Save token and user data
+      if (data.token && data.client) {
+        await login(data.token, data.client);
+        router.replace("/screens/tabs/home");
+      } else {
+        Alert.alert("Error", "No token or user data received from server");
+      }
+    } catch (error) {
+      console.error("Login error:", error);
+      Alert.alert("Error", "An unexpected error occurred. Please try again.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const handleContinueWithoutAccount = () => {
-    console.log("Continue without account");
+  const handleContinueWithoutAccount = async () => {
+    setIsGuestLoading(true);
+    try {
+      await continueAsGuest();
+      router.replace("/screens/tabs/joinQueue");
+    } catch (error) {
+      console.error("Guest mode error:", error);
+      Alert.alert("Error", "Failed to continue as guest");
+    } finally {
+      setIsGuestLoading(false);
+    }
   };
 
   return (
@@ -71,6 +113,7 @@ const Login = () => {
                 keyboardType="phone-pad"
                 value={phoneNumber}
                 onChangeText={setPhoneNumber}
+                editable={!isLoading}
               />
             </View>
 
@@ -86,11 +129,12 @@ const Login = () => {
                 secureTextEntry
                 value={password}
                 onChangeText={setPassword}
+                editable={!isLoading}
               />
             </View>
 
             {/* Forgot Password */}
-            <TouchableOpacity className="self-end mb-6">
+            <TouchableOpacity className="self-end mb-6" disabled={isLoading}>
               <Text className="text-sm text-blue-600 font-[Outfit]">
                 Forgot Password?
               </Text>
@@ -98,22 +142,38 @@ const Login = () => {
 
             {/* Login Button */}
             <TouchableOpacity
-              className="bg-blue-600 rounded-lg py-4 items-center mb-4"
+              className={`rounded-lg py-4 items-center mb-4 ${
+                isLoading ? "bg-blue-400" : "bg-blue-600"
+              }`}
               onPress={handleLogin}
+              disabled={isLoading || isGuestLoading}
             >
-              <Text className="text-white text-base font-semibold font-[Outfit]">
-                Sign In
-              </Text>
+              {isLoading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text className="text-white text-base font-semibold font-[Outfit]">
+                  Sign In
+                </Text>
+              )}
             </TouchableOpacity>
 
             {/* Continue Without Account */}
             <TouchableOpacity
               className="py-3 items-center"
               onPress={handleContinueWithoutAccount}
+              disabled={isLoading || isGuestLoading}
             >
-              <Text className="text-gray-600 text-base font-[Outfit]">
-                Continue without an account
-              </Text>
+              {isGuestLoading ? (
+                <ActivityIndicator color="#4B5563" />
+              ) : (
+                <Text
+                  className={`text-base font-[Outfit] ${
+                    isLoading ? "text-gray-400" : "text-gray-600"
+                  }`}
+                >
+                  Continue without an account
+                </Text>
+              )}
             </TouchableOpacity>
           </View>
 
@@ -122,8 +182,14 @@ const Login = () => {
             <Text className="text-gray-600 font-[Outfit]">
               Don't have an account?{" "}
             </Text>
-            <TouchableOpacity>
-              <Text className="text-blue-600 font-semibold font-[Outfit]">
+            <TouchableOpacity disabled={isLoading || isGuestLoading}>
+              <Text
+                className={`font-semibold font-[Outfit] ${
+                  isLoading || isGuestLoading
+                    ? "text-blue-400"
+                    : "text-blue-600"
+                }`}
+              >
                 Sign Up
               </Text>
             </TouchableOpacity>

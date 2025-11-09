@@ -1,3 +1,4 @@
+// mobile/app/screens/tabs/home.tsx
 import React, { useState } from "react";
 import {
   View,
@@ -22,18 +23,22 @@ import Animated, {
   withDelay,
   Easing,
 } from "react-native-reanimated";
-import { mockQueues } from "../mock/queues";
+import { mockQueues } from "../../mock/queues";
 import JoinQueue from "../modals/joinQueue";
+import TopUpModal from "../modals/TopUpModal";
+import { useAuth } from "../../contexts/AuthContext";
 
 const { width } = Dimensions.get("window");
 
 const Home = () => {
   const router = useRouter();
+  const { userData } = useAuth();
   const [selectedQueueId, setSelectedQueueId] = useState<string | null>(null);
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [showAmountModal, setShowAmountModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState("");
+  const user = userData;
 
   const handleNotifications = () => console.log("Go to notifications");
   const handleComplaint = () => console.log("Make a complaint");
@@ -70,18 +75,8 @@ const Home = () => {
     setShowPaymentModal(true);
   };
 
-  const handlePaymentSuccess = (reference: string) => {
-    console.log("Payment successful:", reference);
-    Alert.alert(
-      "Success!",
-      `GH₵ ${parseFloat(paymentAmount).toFixed(
-        2
-      )} has been added to your account`,
-      [{ text: "OK" }]
-    );
-    setShowPaymentModal(false);
-    setPaymentAmount("");
-    // TODO: Verify payment on backend and update user credits
+  const handlePaymentSuccess = (reference: string, amount: number) => {
+    console.log("Payment successful:", reference, amount);
   };
 
   const handlePaymentCancel = () => {
@@ -94,7 +89,7 @@ const Home = () => {
     setPaymentAmount("");
   };
 
-  const userCredits = 10;
+  const userCredits = user?.credit || 0;
 
   const formatWait = (mins: number) => {
     if (mins < 60) return `${mins}m`;
@@ -105,91 +100,6 @@ const Home = () => {
 
   // Quick amount buttons
   const quickAmounts = [5, 10, 20, 50, 100];
-
-  // Generate HTML with embedded Paystack script - auto-opens payment
-  const generatePaystackHTML = () => {
-    const paystackKey = "pk_test_c475be44704411a11ddded174ab54f75aaa9f728";
-    const email = "attajnr731@gmail.com";
-    const amount = parseFloat(paymentAmount);
-    const reference = `QUEUE_${Date.now()}`;
-
-    return `
-<!DOCTYPE html>
-<html>
-<head>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="https://js.paystack.co/v1/inline.js"></script>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            margin: 0;
-            padding: 0;
-            background: #f9fafb;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-        }
-        .loading {
-            text-align: center;
-            color: #6B7280;
-        }
-        .spinner {
-            border: 3px solid #E5E7EB;
-            border-top: 3px solid #2563EB;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 16px;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-    </style>
-</head>
-<body>
-    <div class="loading">
-        <div class="spinner"></div>
-        <p>Opening payment...</p>
-    </div>
-
-    <script>
-        function payWithPaystack() {
-            var handler = PaystackPop.setup({
-                key: '${paystackKey}',
-                email: '${email}',
-                amount: ${amount * 100}, // Amount in pesewas
-                currency: 'GHS',
-                ref: '${reference}',
-                channels: ['card', 'mobile_money'],
-                onClose: function() {
-                    window.ReactNativeWebView.postMessage(JSON.stringify({
-                        event: 'cancelled'
-                    }));
-                },
-                callback: function(response) {
-                    window.ReactNativeWebView.postMessage(JSON.stringify({
-                        event: 'success',
-                        reference: response.reference,
-                        transaction: response.transaction,
-                        message: response.message
-                    }));
-                }
-            });
-            handler.openIframe();
-        }
-        
-        // Auto-open payment immediately when page loads
-        window.onload = function() {
-            setTimeout(payWithPaystack, 100);
-        };
-    </script>
-</body>
-</html>
-    `;
-  };
 
   return (
     <View className="flex-1 bg-gray-50">
@@ -295,131 +205,12 @@ const Home = () => {
         onJoinQueue={handleJoinQueueSubmit}
       />
 
-      {/* Amount Input Modal */}
-      <Modal
+      <TopUpModal
         visible={showAmountModal}
-        transparent
-        animationType="fade"
-        onRequestClose={handleCloseAmountModal}
-      >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-          className="flex-1 bg-black/50 justify-center items-center"
-        >
-          <View className="bg-white rounded-3xl w-11/12 max-w-md p-6">
-            {/* Header */}
-            <View className="flex-row items-center justify-between mb-6">
-              <Text className="text-xl font-bold text-gray-800">
-                Top Up Credit
-              </Text>
-              <TouchableOpacity onPress={handleCloseAmountModal}>
-                <MaterialIcons name="close" size={24} color="#6B7280" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Amount Input */}
-            <View className="mb-6">
-              <Text className="text-sm text-gray-600 mb-2">Enter Amount</Text>
-              <View className="flex-row items-center border-2 border-blue-500 rounded-xl px-4 bg-blue-50">
-                <Text className="text-2xl font-bold text-gray-700 mr-2">
-                  GH₵
-                </Text>
-                <TextInput
-                  value={paymentAmount}
-                  onChangeText={setPaymentAmount}
-                  placeholder="0.00"
-                  keyboardType="decimal-pad"
-                  className="flex-1 text-3xl font-bold text-gray-900 py-4"
-                  placeholderTextColor="#9CA3AF"
-                  autoFocus
-                />
-              </View>
-            </View>
-
-            {/* Quick Amount Buttons */}
-            <View className="mb-6">
-              <Text className="text-sm text-gray-600 mb-3">Quick Select</Text>
-              <View className="flex-row flex-wrap gap-2">
-                {quickAmounts.map((amount) => (
-                  <TouchableOpacity
-                    key={amount}
-                    onPress={() => setPaymentAmount(amount.toString())}
-                    className="bg-gray-100 px-4 py-3 rounded-lg border border-gray-200"
-                    activeOpacity={0.7}
-                  >
-                    <Text className="text-gray-800 font-semibold">
-                      GH₵ {amount}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            {/* Continue Button */}
-            <TouchableOpacity
-              onPress={handleProceedToPayment}
-              activeOpacity={0.9}
-              className="rounded overflow-hidden shadow-md"
-            >
-              <LinearGradient
-                colors={["#2563EB", "#0d38aeff"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                className="py-4 px-8 flex-row justify-center items-center"
-              >
-                <Text className="text-white  font-bold text-xl tracking-wide text-center py-5">
-                  Continue to Payment
-                </Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      {/* Payment Modal with WebView */}
-      <Modal
-        visible={showPaymentModal}
-        animationType="slide"
-        onRequestClose={handlePaymentCancel}
-      >
-        <View className="flex-1 bg-white">
-          {/* Header */}
-          <View className="flex-row items-center justify-between px-6 pt-12 pb-4 border-b border-gray-200 bg-white">
-            <View>
-              <Text className="text-lg font-bold text-gray-800">Payment</Text>
-              <Text className="text-sm text-gray-500">
-                GH₵ {parseFloat(paymentAmount).toFixed(2)}
-              </Text>
-            </View>
-            <TouchableOpacity onPress={handlePaymentCancel}>
-              <MaterialIcons name="close" size={24} color="#6B7280" />
-            </TouchableOpacity>
-          </View>
-
-          {/* WebView for Paystack */}
-          <WebView
-            originWhitelist={["*"]}
-            source={{ html: generatePaystackHTML() }}
-            onMessage={(event) => {
-              try {
-                const data = JSON.parse(event.nativeEvent.data);
-
-                if (data.event === "success") {
-                  handlePaymentSuccess(data.reference);
-                } else if (data.event === "cancelled") {
-                  handlePaymentCancel();
-                }
-              } catch (error) {
-                console.error("Error parsing message:", error);
-              }
-            }}
-            style={{ flex: 1 }}
-            javaScriptEnabled={true}
-            domStorageEnabled={true}
-            startInLoadingState={true}
-          />
-        </View>
-      </Modal>
+        onClose={() => setShowAmountModal(false)}
+        onPaymentSuccess={handlePaymentSuccess}
+        onPaymentCancel={handlePaymentCancel}
+      />
     </View>
   );
 };

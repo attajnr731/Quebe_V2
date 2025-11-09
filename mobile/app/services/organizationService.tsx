@@ -1,7 +1,7 @@
 // src/services/organizationService.ts
 import axios from "axios";
 
-const API_BASE = "http://192.168.1.100:5000/api";
+const API_BASE = "https://quebe-v2.onrender.com/api";
 
 export const fetchOrganizations = async () => {
   try {

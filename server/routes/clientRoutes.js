@@ -1,10 +1,17 @@
 // routes/clientRoutes.js
 import express from "express";
-import { updateClientCredit } from "../controllers/clientController.js";
+import {
+  updateClientCredit,
+  verifyPayment,
+} from "../controllers/clientController.js";
+import { authenticate } from "../middleware/auth.js";
 
 const router = express.Router();
 
-// Update client credit
-router.put("/:id/credit", updateClientCredit);
+// Update client credit (protected route)
+router.put("/:id/credit", authenticate, updateClientCredit);
+
+// Verify payment and add credit
+router.post("/verify-payment", authenticate, verifyPayment);
 
 export default router;

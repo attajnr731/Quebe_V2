@@ -1,3 +1,4 @@
+// mobile/app/screens/tabs/me.tsx
 import React, { useState } from "react";
 import {
   View,
@@ -6,24 +7,22 @@ import {
   ScrollView,
   Alert,
   Switch,
+  ActivityIndicator,
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { useAuth } from "../../contexts/AuthContext";
+import { useRouter } from "expo-router";
 
 const Me = () => {
+  const { userData, logout } = useAuth();
+  const router = useRouter();
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
-  // Mock user data
-  const userData = {
-    name: "John Doe",
-    email: "attajnr731@gmail.com",
-    phone: "+233 24 123 4567",
-    credits: 10,
-    joinedDate: "Jan 2025",
-    totalQueues: 24,
-    completedQueues: 21,
-  };
+  // Use actual user data from context
+  const user = userData;
 
   const handleEditProfile = () => {
     Alert.alert("Edit Profile", "Profile editing feature coming soon!");
@@ -51,10 +50,25 @@ const Me = () => {
 
   const handleLogout = () => {
     Alert.alert("Logout", "Are you sure you want to logout?", [
-      { text: "Cancel", style: "cancel" },
+      {
+        text: "Cancel",
+        style: "cancel",
+      },
       {
         text: "Logout",
-        onPress: () => console.log("Logged out"),
+        onPress: async () => {
+          setIsLoggingOut(true);
+          try {
+            await logout();
+            // Navigate to login screen
+            router.replace("/screens/login");
+          } catch (error) {
+            console.error("Logout error:", error);
+            Alert.alert("Error", "Failed to logout. Please try again.");
+          } finally {
+            setIsLoggingOut(false);
+          }
+        },
         style: "destructive",
       },
     ]);
@@ -75,6 +89,27 @@ const Me = () => {
     );
   };
 
+  if (isLoggingOut) {
+    return (
+      <View className="flex-1 bg-gray-50 justify-center items-center">
+        <ActivityIndicator size="large" color="#2563EB" />
+        <Text className="text-gray-600 mt-4 font-[Outfit]">Logging out...</Text>
+      </View>
+    );
+  }
+
+  // Add null check for user data
+  if (!user) {
+    return (
+      <View className="flex-1 bg-gray-50 justify-center items-center">
+        <ActivityIndicator size="large" color="#2563EB" />
+        <Text className="text-gray-600 mt-4 font-[Outfit]">
+          Loading profile...
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <ScrollView className="flex-1 bg-gray-50">
       {/* Header with Profile Card */}
@@ -88,35 +123,45 @@ const Me = () => {
         <View className="items-center mb-4 mt-12">
           <View className="w-24 h-24 rounded-full bg-white/20 items-center justify-center border-4 border-white/30">
             <Text className="text-4xl font-bold text-white">
-              {userData.name.charAt(0)}
+              {user.name?.charAt(0) || "?"}
             </Text>
           </View>
-          <Text className="text-2xl font-bold text-white mt-3">
-            {userData.name}
+          <Text className="text-2xl font-bold text-white mt-3 font-[Outfit]">
+            {user.name || "User"}
           </Text>
-          <Text className="text-sm text-blue-100 mt-1">{userData.email}</Text>
-          <Text className="text-sm text-blue-100">{userData.phone}</Text>
+          <Text className="text-sm text-blue-100 mt-1 font-[Outfit]">
+            {user.email || "No email"}
+          </Text>
+          <Text className="text-sm text-blue-100 font-[Outfit]">
+            {user.phone || "No phone"}
+          </Text>
         </View>
 
         {/* Stats Row */}
-        <View className="flex-row justify-around  py-5 bg-white/10 rounded-xl">
+        <View className="flex-row justify-around py-5 bg-white/10 rounded-xl">
           <View className="items-center">
-            <Text className="text-2xl font-bold text-white">
-              {userData.totalQueues}
+            <Text className="text-2xl font-bold text-white font-[Outfit]">
+              {user.totalQueues || 0}
             </Text>
-            <Text className="text-xs text-blue-100 mt-1">Total Queues</Text>
+            <Text className="text-xs text-blue-100 mt-1 font-[Outfit]">
+              Total Queues
+            </Text>
           </View>
           <View className="items-center">
-            <Text className="text-2xl font-bold text-white">
-              {userData.completedQueues}
+            <Text className="text-2xl font-bold text-white font-[Outfit]">
+              {user.completedQueues || 0}
             </Text>
-            <Text className="text-xs text-blue-100 mt-1">Completed</Text>
+            <Text className="text-xs text-blue-100 mt-1 font-[Outfit]">
+              Completed
+            </Text>
           </View>
           <View className="items-center">
-            <Text className="text-2xl font-bold text-white">
-              {userData.credits} ₡
+            <Text className="text-2xl font-bold text-white font-[Outfit]">
+              {user.credit || 0} ₡
             </Text>
-            <Text className="text-xs text-blue-100 mt-1">Credits</Text>
+            <Text className="text-xs text-blue-100 mt-1 font-[Outfit]">
+              Credits
+            </Text>
           </View>
         </View>
       </LinearGradient>
@@ -195,7 +240,7 @@ const Me = () => {
         </View>
 
         {/* App Version */}
-        <Text className="text-center text-sm text-gray-400 mb-8">
+        <Text className="text-center text-sm text-gray-400 mb-8 font-[Outfit]">
           Version 1.0.0
         </Text>
       </View>
@@ -231,9 +276,13 @@ const MenuItem = ({
         <MaterialIcons name={icon as any} size={22} color={iconColor} />
       </View>
       <View className="flex-1 ml-3">
-        <Text className={`text-base font-semibold ${titleColor}`}>{title}</Text>
+        <Text className={`text-base font-semibold ${titleColor} font-[Outfit]`}>
+          {title}
+        </Text>
         {subtitle && (
-          <Text className="text-sm text-gray-500 mt-0.5">{subtitle}</Text>
+          <Text className="text-sm text-gray-500 mt-0.5 font-[Outfit]">
+            {subtitle}
+          </Text>
         )}
       </View>
       <MaterialIcons name="chevron-right" size={22} color="#9CA3AF" />
@@ -264,9 +313,13 @@ const MenuItemWithSwitch = ({
         <MaterialIcons name={icon as any} size={22} color="#2563EB" />
       </View>
       <View className="flex-1 ml-3">
-        <Text className="text-base font-semibold text-gray-800">{title}</Text>
+        <Text className="text-base font-semibold text-gray-800 font-[Outfit]">
+          {title}
+        </Text>
         {subtitle && (
-          <Text className="text-sm text-gray-500 mt-0.5">{subtitle}</Text>
+          <Text className="text-sm text-gray-500 mt-0.5 font-[Outfit]">
+            {subtitle}
+          </Text>
         )}
       </View>
       <Switch
