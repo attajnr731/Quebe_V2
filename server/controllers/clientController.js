@@ -113,6 +113,7 @@ export const verifyPayment = async (req, res) => {
         success: false,
         message: `Payment status: ${txStatus}`,
         details: "Transaction was not successful",
+        status: txStatus,
       });
     }
 
