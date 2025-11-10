@@ -92,6 +92,20 @@ export const verifyPayment = async (req, res) => {
     const paystackDuration = Date.now() - paystackStartTime;
     console.log(`✅ Paystack responded in ${paystackDuration}ms`);
 
+    // In verifyPayment function, add this right before the Paystack API call
+    console.log("🔍 Verification Details:");
+    console.log(
+      "  API Endpoint:",
+      `https://api.paystack.co/transaction/verify/${reference}`
+    );
+    console.log(
+      "  Secret Key (first 20 chars):",
+      paystackSecretKey.substring(0, 20) + "..."
+    );
+    console.log("  Reference:", reference);
+    console.log("  Reference length:", reference.length);
+    console.log("  Reference type:", typeof reference);
+
     const paymentData = verifyResponse.data;
 
     // Check response status
