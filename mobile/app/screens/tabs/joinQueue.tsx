@@ -8,7 +8,7 @@ const JoinQueue = () => {
 
   const handleSignUp = () => {
     // Navigate to sign up screen (you'll need to create this)
-    router.push("./screens/signup");
+    router.push("/screens/signup");
   };
 
   const handleLogin = () => {

@@ -133,7 +133,6 @@ export const updateClientCredit = async (clientId: string, credit: number) => {
   }
 };
 
-// Initialize payment transaction
 export const initializePayment = async (amount: number) => {
   try {
     const token = await getAuthToken();
@@ -145,7 +144,7 @@ export const initializePayment = async (amount: number) => {
       };
     }
 
-    console.log("Initializing payment:", amount);
+    console.log("Initializing payment with amount:", amount);
 
     const response = await axios.post(
       `${API_BASE}/clients/initialize-payment`,

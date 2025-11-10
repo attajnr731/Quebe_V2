@@ -25,3 +25,35 @@ export const loginClient = async (phone: string, password: string) => {
     };
   }
 };
+
+export const signupClient = async (
+  name: string,
+  phone: string,
+  password: string,
+  email: string,
+  photoURL: string | null
+) => {
+  try {
+    const response = await axios.post(`${API_BASE}/auth/signup`, {
+      name,
+      phone,
+      password,
+      email,
+      photoURL, // will be a string URI for now
+    });
+
+    // You can later replace photoURL with actual upload logic
+    return { success: true, ...response.data };
+  } catch (error: any) {
+    if (__DEV__) {
+      console.warn("Signup failed:", error.response?.data || error.message);
+    }
+    return {
+      success: false,
+      message:
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to create account",
+    };
+  }
+};
