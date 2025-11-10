@@ -31,38 +31,18 @@ export const signupClient = async (
   phone: string,
   password: string,
   email: string,
-  photoUri: string | null
+  photoURL: string | null
 ) => {
   try {
-    const formData = new FormData();
-
-    formData.append("name", name);
-    formData.append("phone", phone);
-    formData.append("password", password);
-    formData.append("email", email);
-
-    if (photoUri) {
-      // Convert file URI → Blob (React Native)
-      const filename = photoUri.split("/").pop() || "photo.jpg";
-      const match = /\.(\w+)$/.exec(filename);
-      const ext = match ? match[1] : "jpg";
-      const type = `image/${ext}`;
-
-      // @ts-ignore – React Native FormData typing
-      formData.append("photo", {
-        uri: photoUri,
-        name: filename,
-        type,
-      } as any);
-    }
-
-    const response = await axios.post(`${API_BASE}/auth/signup`, formData, {
-      headers: {
-        "Content-Type": "multipart/form-data",
-      },
+    const response = await axios.post(`${API_BASE}/auth/signup`, {
+      name,
+      phone,
+      password,
+      email,
+      photoURL,
     });
 
-    return { success: true, ...response.data };
+    return { success: true, ...response.data }; // Now includes token
   } catch (error: any) {
     if (__DEV__) {
       console.warn("Signup failed:", error.response?.data || error.message);
