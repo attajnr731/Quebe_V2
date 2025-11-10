@@ -58,7 +58,7 @@ export const verifyPayment = async (req, res) => {
           _id: client._id,
           name: client.name,
           phone: client.phone,
-          email: client.email,
+          email: "attajnr731@gmail.com",
           photoURL: client.photoURL,
           credit: client.credit,
         },
@@ -186,7 +186,7 @@ export const verifyPayment = async (req, res) => {
         _id: client._id,
         name: client.name,
         phone: client.phone,
-        email: client.email,
+        email: "attajnr731@gmail.com",
         photoURL: client.photoURL,
         credit: client.credit,
       },
@@ -288,7 +288,7 @@ export const updateClientCredit = async (req, res) => {
         _id: client._id,
         name: client.name,
         phone: client.phone,
-        email: client.email,
+        email: "attajnr731@gmail.com",
         photoURL: client.photoURL,
         credit: client.credit,
       },
@@ -321,7 +321,7 @@ export const getCurrentClient = async (req, res) => {
         _id: client._id,
         name: client.name,
         phone: client.phone,
-        email: client.email,
+        email: "attajnr731@gmail.com",
         photoURL: client.photoURL,
         credit: client.credit,
       },
@@ -370,13 +370,13 @@ export const initializePayment = async (req, res) => {
     console.log("🔄 Initializing payment:");
     console.log("  Reference:", reference);
     console.log("  Amount:", amount);
-    console.log("  Email:", client.email);
+    console.log("  Email:", "attajnr731@gmail.com");
 
     // Initialize transaction with Paystack
     const initResponse = await axios.post(
       "https://api.paystack.co/transaction/initialize",
       {
-        email: client.email,
+        email: "attajnr731@gmail.com",
         amount: Math.round(amount * 100), // Convert to pesewas/kobo
         reference: reference,
         currency: "GHS",
