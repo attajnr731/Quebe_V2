@@ -14,7 +14,10 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { MaterialIcons } from "@expo/vector-icons";
 import { WebView } from "react-native-webview";
-import { verifyPaymentAndAddCredit } from "../../services/clientService";
+import {
+  initializePayment,
+  verifyPaymentAndAddCredit,
+} from "../../services/clientService";
 import { useAuth } from "../../contexts/AuthContext";
 
 interface TopUpModalProps {
@@ -33,11 +36,13 @@ const TopUpModal: React.FC<TopUpModalProps> = ({
   const { userData, refreshUserData } = useAuth();
   const [paymentAmount, setPaymentAmount] = useState("");
   const [showPaymentWebView, setShowPaymentWebView] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [verificationStatus, setVerificationStatus] = useState("");
+  const [paymentData, setPaymentData] = useState<any>(null);
   const quickAmounts = [5, 10, 20, 50];
 
-  const handleProceedToPayment = () => {
+  const handleProceedToPayment = async () => {
     const amount = parseFloat(paymentAmount);
     if (!paymentAmount || isNaN(amount) || amount <= 0) {
       Alert.alert("Invalid Amount", "Please enter a valid amount");
@@ -47,15 +52,29 @@ const TopUpModal: React.FC<TopUpModalProps> = ({
       Alert.alert("Minimum Amount", "Minimum top-up amount is GH₵ 1.00");
       return;
     }
+
+    setIsInitializing(true);
+
+    // Initialize payment with backend
+    const result = await initializePayment(amount);
+
+    setIsInitializing(false);
+
+    if (!result.success) {
+      Alert.alert("Error", result.message || "Failed to initialize payment");
+      return;
+    }
+
+    console.log("Payment initialized:", result.data);
+    setPaymentData(result.data);
     setShowPaymentWebView(true);
   };
 
-  // === FIXED: Use Paystack's real reference ===
   const generatePaystackHTML = () => {
     const paystackKey = "pk_test_c475be44704411a11ddded174ab54f75aaa9f728";
-    const email = userData?.email || "user@example.com";
     const amount = parseFloat(paymentAmount);
-    const userId = userData?._id || "guest";
+
+    if (!paymentData) return "";
 
     return `
 <!DOCTYPE html>
@@ -80,19 +99,16 @@ const TopUpModal: React.FC<TopUpModalProps> = ({
     setTimeout(function() {
       var handler = PaystackPop.setup({
         key: '${paystackKey}',
-        email: '${email}',
-        amount: ${amount * 100},
-        currency: 'GHS',
-        metadata: { userId: '${userId}' },
-        channels: ['card', 'mobile_money'],
+        access_code: '${paymentData.access_code}',
         onClose: function() {
-          window.ReactNativeWebView.postMessage(JSON.stringify({ event: 'cancelled' }));
+          window.ReactNativeWebView.postMessage(JSON.stringify({ 
+            event: 'cancelled' 
+          }));
         },
         callback: function(response) {
-          // THIS IS THE REAL REFERENCE FROM PAYSTACK
           window.ReactNativeWebView.postMessage(JSON.stringify({
             event: 'success',
-            reference: response.reference,
+            reference: response.reference || '${paymentData.reference}',
             amount: ${amount}
           }));
         }
@@ -105,7 +121,6 @@ const TopUpModal: React.FC<TopUpModalProps> = ({
     `;
   };
 
-  // === FIXED: Retry logic + better error handling ===
   const handlePaymentMessage = async (event: any) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
@@ -114,11 +129,14 @@ const TopUpModal: React.FC<TopUpModalProps> = ({
         const { reference, amount } = data;
         setShowPaymentWebView(false);
         setIsVerifying(true);
-        setVerificationStatus("Verifying payment...");
+        setVerificationStatus("Processing payment...");
 
         console.log("Paystack success:", { reference, amount });
 
-        const maxAttempts = 6;
+        // Wait 2 seconds for Paystack to process
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+
+        const maxAttempts = 5;
         let success = false;
 
         for (let i = 0; i < maxAttempts; i++) {
@@ -130,13 +148,15 @@ const TopUpModal: React.FC<TopUpModalProps> = ({
 
             if (result.success) {
               success = true;
-              Alert.alert("Success", "Credit added successfully!");
+              setIsVerifying(false);
+              Alert.alert("Success!", "Credit added successfully!");
               refreshUserData();
               onPaymentSuccess(reference, amount);
               onClose();
               break;
             } else if (result.message?.includes("already")) {
               success = true;
+              setIsVerifying(false);
               Alert.alert(
                 "Already Credited",
                 "This payment was already processed."
@@ -145,12 +165,16 @@ const TopUpModal: React.FC<TopUpModalProps> = ({
               onClose();
               break;
             }
+
+            console.log("Verification result:", result);
           } catch (err: any) {
             console.log("Retry error:", err.message);
           }
 
           if (i < maxAttempts - 1) {
-            await new Promise((r) => setTimeout(r, 3000 * (i + 1))); // exponential backoff
+            const waitTime = 3000 * (i + 1); // 3s, 6s, 9s, 12s, 15s
+            console.log(`Waiting ${waitTime / 1000}s before retry...`);
+            await new Promise((r) => setTimeout(r, waitTime));
           }
         }
 
@@ -158,7 +182,8 @@ const TopUpModal: React.FC<TopUpModalProps> = ({
           setIsVerifying(false);
           Alert.alert(
             "Verification Delayed",
-            "Payment received but verification is taking time. Credit will update soon via webhook. Refresh in a minute.",
+            "Payment received! Your credit will update shortly via webhook. Please refresh in 1-2 minutes.\n\nRef: " +
+              reference,
             [
               {
                 text: "OK",
@@ -182,7 +207,22 @@ const TopUpModal: React.FC<TopUpModalProps> = ({
     }
   };
 
-  // === Verifying UI ===
+  // Loading states
+  if (isInitializing) {
+    return (
+      <Modal visible transparent animationType="fade">
+        <View className="flex-1 bg-black/50 justify-center items-center px-6">
+          <View className="bg-white rounded-3xl p-8 items-center w-full max-w-sm">
+            <ActivityIndicator size="large" color="#2563EB" />
+            <Text className="text-gray-700 mt-4 text-lg font-semibold text-center">
+              Preparing Payment...
+            </Text>
+          </View>
+        </View>
+      </Modal>
+    );
+  }
+
   if (isVerifying) {
     return (
       <Modal visible transparent animationType="fade">
@@ -286,6 +326,7 @@ const TopUpModal: React.FC<TopUpModalProps> = ({
               <TouchableOpacity
                 onPress={() => {
                   setShowPaymentWebView(false);
+                  setPaymentData(null);
                   onPaymentCancel();
                 }}
               >

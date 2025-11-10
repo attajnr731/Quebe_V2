@@ -132,3 +132,40 @@ export const updateClientCredit = async (clientId: string, credit: number) => {
     };
   }
 };
+
+// Initialize payment transaction
+export const initializePayment = async (amount: number) => {
+  try {
+    const token = await getAuthToken();
+
+    if (!token) {
+      return {
+        success: false,
+        message: "Not authenticated. Please login again.",
+      };
+    }
+
+    console.log("Initializing payment:", amount);
+
+    const response = await axios.post(
+      `${API_BASE}/clients/initialize-payment`,
+      { amount },
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        timeout: 30000,
+      }
+    );
+
+    console.log("Initialize response:", response.data);
+    return { success: true, ...response.data };
+  } catch (error: any) {
+    console.error("Initialize payment error:", error.response?.data || error);
+    return {
+      success: false,
+      message: error.response?.data?.message || "Failed to initialize payment.",
+    };
+  }
+};
