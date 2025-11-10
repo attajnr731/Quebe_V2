@@ -73,6 +73,10 @@ const Login = () => {
     }
   };
 
+  const handleSignUp = () => {
+    router.push("./signup");
+  };
+
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -182,7 +186,10 @@ const Login = () => {
             <Text className="text-gray-600 font-[Outfit]">
               Don't have an account?{" "}
             </Text>
-            <TouchableOpacity disabled={isLoading || isGuestLoading}>
+            <TouchableOpacity
+              disabled={isLoading || isGuestLoading}
+              onPress={handleSignUp}
+            >
               <Text
                 className={`font-semibold font-[Outfit] ${
                   isLoading || isGuestLoading

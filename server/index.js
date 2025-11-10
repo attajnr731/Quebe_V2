@@ -9,6 +9,8 @@ import branchRoutes from "./routes/branchRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import clientRoutes from "./routes/clientRoutes.js";
 import webhookRoutes from "./routes/webhookRoutes.js";
+import path from "path";
+import { fileURLToPath } from "url";
 
 dotenv.config();
 
@@ -25,6 +27,11 @@ app.use(
     credentials: true,
   })
 );
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // CRITICAL: Webhook route MUST come BEFORE express.json()
 // Paystack needs raw body for signature verification
