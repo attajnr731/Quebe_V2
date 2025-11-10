@@ -30,20 +30,28 @@ export const clientSignup = async (req, res) => {
       password: hashedPassword,
       email,
       photoURL,
-      credit: 0, // optional, default already set in schema
+      credit: 0,
     });
 
     await client.save();
 
+    // === GENERATE JWT TOKEN ON SIGNUP ===
+    const token = jwt.sign(
+      { id: client._id, phone: client.phone },
+      process.env.JWT_SECRET || "secretkey",
+      { expiresIn: "7d" }
+    );
+
     res.status(201).json({
       success: true,
+      token, // ← ADD THIS
       client: {
         _id: client._id,
         name: client.name,
         phone: client.phone,
         email: client.email,
         photoURL: client.photoURL,
-        credit: client.credit, // ✅ include credit
+        credit: client.credit,
       },
     });
   } catch (error) {

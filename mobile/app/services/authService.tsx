@@ -39,11 +39,10 @@ export const signupClient = async (
       phone,
       password,
       email,
-      photoURL, // will be a string URI for now
+      photoURL,
     });
 
-    // You can later replace photoURL with actual upload logic
-    return { success: true, ...response.data };
+    return { success: true, ...response.data }; // Now includes token
   } catch (error: any) {
     if (__DEV__) {
       console.warn("Signup failed:", error.response?.data || error.message);

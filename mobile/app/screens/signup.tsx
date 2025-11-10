@@ -55,7 +55,6 @@ const SignUp = () => {
 
     setIsLoading(true);
     try {
-      // send signup data to backend
       const data = await signupClient(name, phone, password, email, photoURL);
 
       if (!data.success) {
@@ -63,12 +62,12 @@ const SignUp = () => {
         return;
       }
 
-      // automatically log user in
-      if (data.client) {
+      // Now safely check for token
+      if (data.token && data.client) {
         await login(data.token, data.client);
         router.replace("/screens/tabs/home");
       } else {
-        Alert.alert("Error", "No user data received from server");
+        Alert.alert("Error", "No token or user data received from server");
       }
     } catch (error) {
       console.error("Signup error:", error);
@@ -77,7 +76,6 @@ const SignUp = () => {
       setIsLoading(false);
     }
   };
-
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : "height"}
