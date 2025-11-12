@@ -24,14 +24,13 @@ export const verifyPayment = async (req, res) => {
     const userId = req.userId;
 
     console.log("=== PAYMENT VERIFICATION START ===");
-    console.log("Timestamp:", new Date().toISOString());
+    console.log("Time:", new Date().toISOString());
     console.log("Reference:", reference);
     console.log("Amount:", amount);
     console.log("UserID:", userId);
 
     // Validation
     if (!reference || !amount) {
-      console.log("❌ Missing required fields");
       return res.status(400).json({
         success: false,
         message: "Reference and amount are required",
@@ -40,7 +39,7 @@ export const verifyPayment = async (req, res) => {
 
     // Check if already processed
     if (processedTransactions.has(reference)) {
-      console.log("⚠️ Transaction already processed:", reference);
+      console.log("⚠️ Already processed:", reference);
 
       const client = await Client.findById(userId);
       if (!client) {
@@ -58,25 +57,24 @@ export const verifyPayment = async (req, res) => {
           _id: client._id,
           name: client.name,
           phone: client.phone,
-          email: "attajnr731@gmail.com",
+          email: client.email,
           photoURL: client.photoURL,
           credit: client.credit,
         },
       });
     }
 
-    // Check Paystack secret key
+    // Get Paystack secret key
     const paystackSecretKey = process.env.PAYSTACK_SECRET_KEY;
     if (!paystackSecretKey) {
       console.error("❌ PAYSTACK_SECRET_KEY not configured");
       return res.status(500).json({
         success: false,
-        message: "Payment gateway configuration error",
+        message: "Payment gateway not configured",
       });
     }
 
     console.log("📡 Calling Paystack API...");
-    const paystackStartTime = Date.now();
 
     // Verify with Paystack
     const verifyResponse = await axios.get(
@@ -89,45 +87,18 @@ export const verifyPayment = async (req, res) => {
       }
     );
 
-    const paystackDuration = Date.now() - paystackStartTime;
-    console.log(`✅ Paystack responded in ${paystackDuration}ms`);
-
-    // In verifyPayment function, add this right before the Paystack API call
-    console.log("🔍 Verification Details:");
-    console.log(
-      "  API Endpoint:",
-      `https://api.paystack.co/transaction/verify/${reference}`
-    );
-    console.log(
-      "  Secret Key (first 20 chars):",
-      paystackSecretKey.substring(0, 20) + "..."
-    );
-    console.log("  Reference:", reference);
-    console.log("  Reference length:", reference.length);
-    console.log("  Reference type:", typeof reference);
+    console.log("✅ Paystack responded");
 
     const paymentData = verifyResponse.data;
 
-    // Check response status
-    if (!paymentData.status) {
-      console.error("❌ Paystack returned false status");
+    // Check status
+    if (!paymentData.status || paymentData.data?.status !== "success") {
+      console.error("❌ Payment not successful:", paymentData.data?.status);
       return res.status(400).json({
         success: false,
-        message: paymentData.message || "Payment verification failed",
-      });
-    }
-
-    // Check transaction status
-    const txStatus = paymentData.data?.status;
-    console.log("Transaction status:", txStatus);
-
-    if (txStatus !== "success") {
-      console.error(`❌ Transaction not successful: ${txStatus}`);
-      return res.status(400).json({
-        success: false,
-        message: `Payment status: ${txStatus}`,
-        details: "Transaction was not successful",
-        status: txStatus,
+        message: `Payment not successful: ${
+          paymentData.data?.status || "unknown"
+        }`,
       });
     }
 
@@ -135,24 +106,21 @@ export const verifyPayment = async (req, res) => {
     const paidAmount = paymentData.data.amount / 100;
     const requestedAmount = parseFloat(amount);
 
-    console.log("💰 Amount verification:");
+    console.log("💰 Amount check:");
     console.log("  Paid:", paidAmount);
     console.log("  Requested:", requestedAmount);
 
     if (Math.abs(paidAmount - requestedAmount) > 0.01) {
-      console.error("❌ Amount mismatch");
       return res.status(400).json({
         success: false,
-        message: "Payment amount mismatch",
+        message: "Amount mismatch",
         expected: requestedAmount,
         received: paidAmount,
       });
     }
 
     // Find client
-    console.log("🔍 Finding client:", userId);
     const client = await Client.findById(userId);
-
     if (!client) {
       console.error("❌ Client not found:", userId);
       return res.status(404).json({
@@ -165,28 +133,28 @@ export const verifyPayment = async (req, res) => {
     const oldCredit = client.credit || 0;
     client.credit = oldCredit + paidAmount;
 
-    console.log("💳 Updating credit:");
-    console.log("  Old balance:", oldCredit);
+    console.log("💳 Credit update:");
+    console.log("  Old:", oldCredit);
     console.log("  Adding:", paidAmount);
-    console.log("  New balance:", client.credit);
+    console.log("  New:", client.credit);
 
     await client.save();
 
     // Mark as processed
     processedTransactions.set(reference, Date.now());
 
-    const totalDuration = Date.now() - startTime;
-    console.log(`✅ VERIFICATION SUCCESSFUL (${totalDuration}ms)`);
-    console.log("=== PAYMENT VERIFICATION END ===\n");
+    const totalTime = Date.now() - startTime;
+    console.log(`✅ SUCCESS (${totalTime}ms)`);
+    console.log("=== VERIFICATION END ===\n");
 
     return res.status(200).json({
       success: true,
-      message: "Payment verified and credit added successfully",
+      message: "Payment verified and credit added",
       client: {
         _id: client._id,
         name: client.name,
         phone: client.phone,
-        email: "attajnr731@gmail.com",
+        email: client.email,
         photoURL: client.photoURL,
         credit: client.credit,
       },
@@ -194,64 +162,71 @@ export const verifyPayment = async (req, res) => {
         reference: paymentData.data.reference,
         amount: paidAmount,
         date: paymentData.data.paid_at,
-        status: txStatus,
       },
-      processingTime: totalDuration,
     });
   } catch (error) {
-    const totalDuration = Date.now() - startTime;
+    const totalTime = Date.now() - startTime;
 
-    console.error("=== PAYMENT VERIFICATION ERROR ===");
-    console.error("Error after", totalDuration, "ms");
-    console.error("Error type:", error.name);
-    console.error("Error message:", error.message);
+    console.error("=== VERIFICATION ERROR ===");
+    console.error("After", totalTime, "ms");
+    console.error("Error:", error.message);
 
-    // Axios/Network errors
     if (error.response) {
-      console.error("Paystack API error:");
-      console.error("  Status:", error.response.status);
-      console.error("  Data:", error.response.data);
-
+      console.error("Paystack error:", error.response.data);
       return res.status(error.response.status || 500).json({
         success: false,
-        message:
-          error.response.data?.message ||
-          "Payment verification failed with Paystack",
+        message: error.response.data?.message || "Paystack verification failed",
         details: error.response.data,
       });
     }
 
-    // Timeout errors
-    if (error.code === "ECONNABORTED" || error.code === "ETIMEDOUT") {
-      console.error("⏱️ Request timeout");
+    if (error.code === "ECONNABORTED") {
       return res.status(408).json({
         success: false,
-        message: "Payment verification timed out. Please try again.",
-        code: "TIMEOUT",
+        message: "Request timeout",
       });
     }
 
-    // Network errors
-    if (error.code === "ENOTFOUND" || error.code === "ECONNREFUSED") {
-      console.error("🌐 Network error");
-      return res.status(503).json({
-        success: false,
-        message: "Cannot reach payment gateway. Please try again.",
-        code: "NETWORK_ERROR",
-      });
-    }
-
-    // Generic error
-    console.error("Stack:", error.stack);
     return res.status(500).json({
       success: false,
-      message: "Server error during payment verification",
+      message: "Server error during verification",
       error: error.message,
     });
   }
 };
 
-// PUT /api/clients/:id/credit
+export const getCurrentClient = async (req, res) => {
+  try {
+    const client = await Client.findById(req.userId);
+
+    if (!client) {
+      return res.status(404).json({
+        success: false,
+        message: "Client not found",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      client: {
+        _id: client._id,
+        name: client.name,
+        phone: client.phone,
+        email: client.email,
+        photoURL: client.photoURL,
+        credit: client.credit,
+      },
+    });
+  } catch (error) {
+    console.error("Get client error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+};
+
+// PUT /api/clients/:id/credit (manual credit update)
 export const updateClientCredit = async (req, res) => {
   try {
     const { id } = req.params;
@@ -260,14 +235,14 @@ export const updateClientCredit = async (req, res) => {
     if (req.userId !== id) {
       return res.status(403).json({
         success: false,
-        message: "Unauthorized to update this client",
+        message: "Unauthorized",
       });
     }
 
     if (credit === undefined || credit < 0) {
       return res.status(400).json({
         success: false,
-        message: "Valid credit value is required",
+        message: "Valid credit required",
       });
     }
 
@@ -288,46 +263,13 @@ export const updateClientCredit = async (req, res) => {
         _id: client._id,
         name: client.name,
         phone: client.phone,
-        email: "attajnr731@gmail.com",
+        email: client.email,
         photoURL: client.photoURL,
         credit: client.credit,
       },
     });
   } catch (error) {
-    console.error("Error updating client credit:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-    });
-  }
-};
-
-// GET /api/clients/me
-export const getCurrentClient = async (req, res) => {
-  try {
-    const userId = req.userId;
-
-    const client = await Client.findById(userId);
-    if (!client) {
-      return res.status(404).json({
-        success: false,
-        message: "Client not found",
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      client: {
-        _id: client._id,
-        name: client.name,
-        phone: client.phone,
-        email: "attajnr731@gmail.com",
-        photoURL: client.photoURL,
-        credit: client.credit,
-      },
-    });
-  } catch (error) {
-    console.error("Error getting current client:", error);
+    console.error("Update credit error:", error);
     res.status(500).json({
       success: false,
       message: "Server error",

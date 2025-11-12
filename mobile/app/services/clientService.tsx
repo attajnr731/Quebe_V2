@@ -4,18 +4,17 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const API_BASE = "https://quebe-v2.onrender.com/api";
 
-// Get auth token from AsyncStorage
+// Get auth token
 const getAuthToken = async () => {
   try {
-    const token = await AsyncStorage.getItem("authToken");
-    return token;
+    return await AsyncStorage.getItem("authToken");
   } catch (error) {
     console.error("Error getting auth token:", error);
     return null;
   }
 };
 
-// Get current user data
+// Get current user
 export const getCurrentUser = async () => {
   try {
     const token = await getAuthToken();
@@ -25,9 +24,7 @@ export const getCurrentUser = async () => {
     }
 
     const response = await axios.get(`${API_BASE}/clients/me`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
+      headers: { Authorization: `Bearer ${token}` },
       timeout: 10000,
     });
 
@@ -41,11 +38,10 @@ export const getCurrentUser = async () => {
   }
 };
 
-// Verify payment and update credit with retry logic
+// Verify payment and add credit
 export const verifyPaymentAndAddCredit = async (
   reference: string,
-  amount: number,
-  retryCount = 0
+  amount: number
 ) => {
   try {
     const token = await getAuthToken();
@@ -53,53 +49,43 @@ export const verifyPaymentAndAddCredit = async (
     if (!token) {
       return {
         success: false,
-        message: "Not authenticated. Please login again.",
+        message: "Not authenticated",
       };
     }
 
-    console.log(`Verifying payment (attempt ${retryCount + 1}):`, {
-      reference,
-      amount,
-    });
+    console.log("🔄 Verifying payment:", { reference, amount });
 
     const response = await axios.post(
       `${API_BASE}/clients/verify-payment`,
-      {
-        reference,
-        amount,
-      },
+      { reference, amount },
       {
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        timeout: 60000, // 60 seconds
+        timeout: 30000,
       }
     );
 
-    console.log("Verification response:", response.data);
+    console.log("✅ Verification response:", response.data);
     return { success: true, ...response.data };
   } catch (error: any) {
-    console.error("Payment verification error:", {
+    console.error("❌ Verification error:", {
       message: error.message,
       response: error.response?.data,
       status: error.response?.status,
-      attempt: retryCount + 1,
     });
 
     return {
       success: false,
       message:
-        error.response?.data?.message ||
-        error.response?.data?.details ||
-        error.message ||
-        "Failed to verify payment. Please contact support.",
+        error.response?.data?.message || error.message || "Verification failed",
       details: error.response?.data,
     };
   }
 };
 
-// Update client credit manually (if needed)
+// Manual credit update (if needed)
 export const updateClientCredit = async (clientId: string, credit: number) => {
   try {
     const token = await getAuthToken();
@@ -107,7 +93,7 @@ export const updateClientCredit = async (clientId: string, credit: number) => {
     if (!token) {
       return {
         success: false,
-        message: "Not authenticated. Please login again.",
+        message: "Not authenticated",
       };
     }
 
@@ -128,11 +114,10 @@ export const updateClientCredit = async (clientId: string, credit: number) => {
     console.error("Credit update error:", error.response?.data || error);
     return {
       success: false,
-      message: error.response?.data?.message || "Failed to update credit.",
+      message: error.response?.data?.message || "Failed to update credit",
     };
   }
 };
-
 export const initializePayment = async (amount: number) => {
   try {
     const token = await getAuthToken();

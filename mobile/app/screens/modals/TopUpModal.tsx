@@ -14,11 +14,9 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { MaterialIcons } from "@expo/vector-icons";
 import { WebView } from "react-native-webview";
-import {
-  initializePayment,
-  verifyPaymentAndAddCredit,
-} from "../../services/clientService";
+import { verifyPaymentAndAddCredit } from "../../services/clientService";
 import { useAuth } from "../../contexts/AuthContext";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 interface TopUpModalProps {
   visible: boolean;
@@ -36,13 +34,11 @@ const TopUpModal: React.FC<TopUpModalProps> = ({
   const { userData, refreshUserData } = useAuth();
   const [paymentAmount, setPaymentAmount] = useState("");
   const [showPaymentWebView, setShowPaymentWebView] = useState(false);
-  const [isInitializing, setIsInitializing] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [verificationStatus, setVerificationStatus] = useState("");
-  const [paymentData, setPaymentData] = useState<any>(null);
   const quickAmounts = [5, 10, 20, 50];
 
-  const handleProceedToPayment = async () => {
+  const handleProceedToPayment = () => {
     const amount = parseFloat(paymentAmount);
     if (!paymentAmount || isNaN(amount) || amount <= 0) {
       Alert.alert("Invalid Amount", "Please enter a valid amount");
@@ -52,29 +48,17 @@ const TopUpModal: React.FC<TopUpModalProps> = ({
       Alert.alert("Minimum Amount", "Minimum top-up amount is GH₵ 1.00");
       return;
     }
-
-    setIsInitializing(true);
-
-    // Initialize payment with backend
-    const result = await initializePayment(amount);
-
-    setIsInitializing(false);
-
-    if (!result.success) {
-      Alert.alert("Error", result.message || "Failed to initialize payment");
-      return;
-    }
-
-    console.log("Payment initialized:", result.data);
-    setPaymentData(result.data);
     setShowPaymentWebView(true);
   };
 
   const generatePaystackHTML = () => {
     const paystackKey = "pk_test_c475be44704411a11ddded174ab54f75aaa9f728";
     const amount = parseFloat(paymentAmount);
+    const userId = userData?._id || "guest";
+    const userPhone = userData?.phone || "0000000000";
 
-    if (!paymentData) return "";
+    // Use phone as email if no email exists (Paystack accepts this in test mode)
+    const userEmail = userData?.email || `${userPhone}@quebe.app`;
 
     return `
 <!DOCTYPE html>
@@ -83,23 +67,63 @@ const TopUpModal: React.FC<TopUpModalProps> = ({
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="https://js.paystack.co/v1/inline.js"></script>
   <style>
-    body { margin: 0; padding: 0; font-family: sans-serif; background: #f9fafb; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    body { 
+      margin: 0; 
+      padding: 0; 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f9fafb; 
+      display: flex; 
+      align-items: center; 
+      justify-content: center; 
+      min-height: 100vh; 
+    }
     .container { text-align: center; padding: 20px; }
-    .spinner { border: 4px solid #E5E7EB; border-top: 4px solid #2563EB; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 16px; }
-    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .spinner { 
+      border: 4px solid #E5E7EB; 
+      border-top: 4px solid #2563EB; 
+      border-radius: 50%; 
+      width: 40px; 
+      height: 40px; 
+      animation: spin 1s linear infinite; 
+      margin: 0 auto 16px; 
+    }
+    @keyframes spin { 
+      0% { transform: rotate(0deg); } 
+      100% { transform: rotate(360deg); } 
+    }
+    p { color: #6B7280; }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="spinner"></div>
-    <p>Opening Paystack...</p>
+    <p>Opening payment...</p>
   </div>
 
   <script>
     setTimeout(function() {
       var handler = PaystackPop.setup({
         key: '${paystackKey}',
-        access_code: '${paymentData.access_code}',
+        email: '${userEmail}',
+        amount: ${amount * 100},
+        currency: 'GHS',
+        metadata: {
+          userId: '${userId}',
+          phone: '${userPhone}',
+          custom_fields: [
+            {
+              display_name: "User ID",
+              variable_name: "user_id",
+              value: '${userId}'
+            },
+            {
+              display_name: "Phone",
+              variable_name: "phone",
+              value: '${userPhone}'
+            }
+          ]
+        },
+        channels: ['card', 'mobile_money'],
         onClose: function() {
           window.ReactNativeWebView.postMessage(JSON.stringify({ 
             event: 'cancelled' 
@@ -108,7 +132,7 @@ const TopUpModal: React.FC<TopUpModalProps> = ({
         callback: function(response) {
           window.ReactNativeWebView.postMessage(JSON.stringify({
             event: 'success',
-            reference: response.reference || '${paymentData.reference}',
+            reference: response.reference,
             amount: ${amount}
           }));
         }
@@ -129,51 +153,74 @@ const TopUpModal: React.FC<TopUpModalProps> = ({
         const { reference, amount } = data;
         setShowPaymentWebView(false);
         setIsVerifying(true);
-        setVerificationStatus("Processing payment...");
+        setVerificationStatus("Verifying payment...");
 
-        console.log("Paystack success:", { reference, amount });
+        console.log("✅ Payment successful:", { reference, amount });
 
-        // Wait 2 seconds for Paystack to process
+        // Wait 2 seconds for Paystack to finalize
         await new Promise((resolve) => setTimeout(resolve, 2000));
 
         const maxAttempts = 5;
         let success = false;
 
-        for (let i = 0; i < maxAttempts; i++) {
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
           try {
-            setVerificationStatus(`Verifying... (${i + 1}/${maxAttempts})`);
-            console.log(`Verification attempt ${i + 1}`);
+            setVerificationStatus(
+              `Verifying... (${attempt + 1}/${maxAttempts})`
+            );
+            console.log(`🔄 Verification attempt ${attempt + 1}`);
 
             const result = await verifyPaymentAndAddCredit(reference, amount);
 
             if (result.success) {
               success = true;
+
+              // Update local storage
+              if (result.client) {
+                await AsyncStorage.setItem(
+                  "userData",
+                  JSON.stringify(result.client)
+                );
+                await refreshUserData();
+              }
+
               setIsVerifying(false);
-              Alert.alert("Success!", "Credit added successfully!");
-              refreshUserData();
-              onPaymentSuccess(reference, amount);
-              onClose();
+              Alert.alert(
+                "Success! 🎉",
+                `GH₵ ${amount.toFixed(2)} has been added to your account`,
+                [
+                  {
+                    text: "OK",
+                    onPress: () => {
+                      onPaymentSuccess(reference, amount);
+                      setPaymentAmount("");
+                      onClose();
+                    },
+                  },
+                ]
+              );
               break;
-            } else if (result.message?.includes("already")) {
+            } else if (result.message?.toLowerCase().includes("already")) {
               success = true;
               setIsVerifying(false);
               Alert.alert(
-                "Already Credited",
-                "This payment was already processed."
+                "Already Processed",
+                "This payment was already credited to your account.",
+                [{ text: "OK", onPress: onClose }]
               );
-              refreshUserData();
-              onClose();
+              await refreshUserData();
               break;
             }
 
-            console.log("Verification result:", result);
+            console.log("❌ Verification failed:", result.message);
           } catch (err: any) {
-            console.log("Retry error:", err.message);
+            console.log("⚠️ Verification error:", err.message);
           }
 
-          if (i < maxAttempts - 1) {
-            const waitTime = 3000 * (i + 1); // 3s, 6s, 9s, 12s, 15s
-            console.log(`Waiting ${waitTime / 1000}s before retry...`);
+          // Wait before next attempt (exponential backoff)
+          if (attempt < maxAttempts - 1) {
+            const waitTime = Math.pow(2, attempt + 1) * 1000; // 2s, 4s, 8s, 16s
+            console.log(`⏳ Waiting ${waitTime / 1000}s before retry...`);
             await new Promise((r) => setTimeout(r, waitTime));
           }
         }
@@ -181,15 +228,17 @@ const TopUpModal: React.FC<TopUpModalProps> = ({
         if (!success) {
           setIsVerifying(false);
           Alert.alert(
-            "Verification Delayed",
-            "Payment received! Your credit will update shortly via webhook. Please refresh in 1-2 minutes.\n\nRef: " +
-              reference,
+            "Payment Received",
+            "Your payment was successful! Your balance will update shortly via webhook. Please check back in 1-2 minutes.\n\nReference: " +
+              reference.substring(0, 20) +
+              "...",
             [
               {
                 text: "OK",
                 onPress: () => {
-                  refreshUserData();
+                  setPaymentAmount("");
                   onClose();
+                  refreshUserData();
                 },
               },
             ]
@@ -198,30 +247,13 @@ const TopUpModal: React.FC<TopUpModalProps> = ({
       } else if (data.event === "cancelled") {
         setShowPaymentWebView(false);
         onPaymentCancel();
-        Alert.alert("Cancelled", "Payment was cancelled.");
       }
     } catch (error) {
-      console.error("Message error:", error);
+      console.error("❌ Payment message error:", error);
       setIsVerifying(false);
       Alert.alert("Error", "Failed to process payment response.");
     }
   };
-
-  // Loading states
-  if (isInitializing) {
-    return (
-      <Modal visible transparent animationType="fade">
-        <View className="flex-1 bg-black/50 justify-center items-center px-6">
-          <View className="bg-white rounded-3xl p-8 items-center w-full max-w-sm">
-            <ActivityIndicator size="large" color="#2563EB" />
-            <Text className="text-gray-700 mt-4 text-lg font-semibold text-center">
-              Preparing Payment...
-            </Text>
-          </View>
-        </View>
-      </Modal>
-    );
-  }
 
   if (isVerifying) {
     return (
@@ -326,7 +358,6 @@ const TopUpModal: React.FC<TopUpModalProps> = ({
               <TouchableOpacity
                 onPress={() => {
                   setShowPaymentWebView(false);
-                  setPaymentData(null);
                   onPaymentCancel();
                 }}
               >
