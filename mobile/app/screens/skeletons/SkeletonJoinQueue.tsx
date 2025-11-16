@@ -3,7 +3,7 @@ import React from "react";
 import { View, Animated, Dimensions, StyleSheet } from "react-native";
 
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
-const MODAL_HEIGHT = SCREEN_HEIGHT * 0.9;
+const MODAL_HEIGHT = SCREEN_HEIGHT * 0.65;
 
 const Shimmer = ({ width = "100%", height = 20, style }: any) => {
   const anim = React.useRef(new Animated.Value(0)).current;

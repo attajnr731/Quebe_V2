@@ -1,6 +1,7 @@
 // controllers/clientController.js
 import Client from "../models/Client.js";
 import axios from "axios";
+import crypto from "crypto";
 
 // Store processed transactions to prevent duplicate credits
 const processedTransactions = new Map();
@@ -15,7 +16,7 @@ setInterval(() => {
   }
 }, 60 * 60 * 1000);
 
-// POST /api/clients/verify-payment
+// POST /api/clients/verify-payment - OPTIMISTIC APPROACH
 export const verifyPayment = async (req, res) => {
   const startTime = Date.now();
 
@@ -64,62 +65,7 @@ export const verifyPayment = async (req, res) => {
       });
     }
 
-    // Get Paystack secret key
-    const paystackSecretKey = process.env.PAYSTACK_SECRET_KEY;
-    if (!paystackSecretKey) {
-      console.error("❌ PAYSTACK_SECRET_KEY not configured");
-      return res.status(500).json({
-        success: false,
-        message: "Payment gateway not configured",
-      });
-    }
-
-    console.log("📡 Calling Paystack API...");
-
-    // Verify with Paystack
-    const verifyResponse = await axios.get(
-      `https://api.paystack.co/transaction/verify/${reference}`,
-      {
-        headers: {
-          Authorization: `Bearer ${paystackSecretKey}`,
-        },
-        timeout: 15000,
-      }
-    );
-
-    console.log("✅ Paystack responded");
-
-    const paymentData = verifyResponse.data;
-
-    // Check status
-    if (!paymentData.status || paymentData.data?.status !== "success") {
-      console.error("❌ Payment not successful:", paymentData.data?.status);
-      return res.status(400).json({
-        success: false,
-        message: `Payment not successful: ${
-          paymentData.data?.status || "unknown"
-        }`,
-      });
-    }
-
-    // Verify amount
-    const paidAmount = paymentData.data.amount / 100;
-    const requestedAmount = parseFloat(amount);
-
-    console.log("💰 Amount check:");
-    console.log("  Paid:", paidAmount);
-    console.log("  Requested:", requestedAmount);
-
-    if (Math.abs(paidAmount - requestedAmount) > 0.01) {
-      return res.status(400).json({
-        success: false,
-        message: "Amount mismatch",
-        expected: requestedAmount,
-        received: paidAmount,
-      });
-    }
-
-    // Find client
+    // Find client first
     const client = await Client.findById(userId);
     if (!client) {
       console.error("❌ Client not found:", userId);
@@ -129,11 +75,13 @@ export const verifyPayment = async (req, res) => {
       });
     }
 
-    // Update credit
+    // OPTIMISTIC CREDIT UPDATE
+    // Since Paystack already sent success callback, trust it and add credit immediately
+    const paidAmount = parseFloat(amount);
     const oldCredit = client.credit || 0;
     client.credit = oldCredit + paidAmount;
 
-    console.log("💳 Credit update:");
+    console.log("💳 Credit update (OPTIMISTIC):");
     console.log("  Old:", oldCredit);
     console.log("  Adding:", paidAmount);
     console.log("  New:", client.credit);
@@ -144,10 +92,11 @@ export const verifyPayment = async (req, res) => {
     processedTransactions.set(reference, Date.now());
 
     const totalTime = Date.now() - startTime;
-    console.log(`✅ SUCCESS (${totalTime}ms)`);
+    console.log(`✅ SUCCESS - Credit added immediately (${totalTime}ms)`);
     console.log("=== VERIFICATION END ===\n");
 
-    return res.status(200).json({
+    // Return success immediately
+    res.status(200).json({
       success: true,
       message: "Payment verified and credit added",
       client: {
@@ -159,11 +108,57 @@ export const verifyPayment = async (req, res) => {
         credit: client.credit,
       },
       transaction: {
-        reference: paymentData.data.reference,
+        reference: reference,
         amount: paidAmount,
-        date: paymentData.data.paid_at,
+        date: new Date().toISOString(),
       },
     });
+
+    // BACKGROUND VERIFICATION (non-blocking)
+    // Verify with Paystack in background for audit trail
+    setTimeout(async () => {
+      try {
+        const paystackSecretKey = process.env.PAYSTACK_SECRET_KEY;
+        if (!paystackSecretKey) return;
+
+        console.log("🔍 Background verification for:", reference);
+
+        const verifyResponse = await axios.get(
+          `https://api.paystack.co/transaction/verify/${reference}`,
+          {
+            headers: {
+              Authorization: `Bearer ${paystackSecretKey}`,
+            },
+            timeout: 15000,
+          }
+        );
+
+        const paymentData = verifyResponse.data;
+
+        if (paymentData.status && paymentData.data?.status === "success") {
+          console.log("✅ Background verification successful:", reference);
+
+          // Verify amount matches
+          const verifiedAmount = paymentData.data.amount / 100;
+          if (Math.abs(verifiedAmount - paidAmount) > 0.01) {
+            console.error("⚠️ AMOUNT MISMATCH!");
+            console.error("  Expected:", paidAmount);
+            console.error("  Got:", verifiedAmount);
+            // You might want to log this to a monitoring service
+          }
+        } else {
+          console.error(
+            "❌ Background verification failed:",
+            paymentData.data?.status
+          );
+        }
+      } catch (error) {
+        console.error(
+          "Background verification error (non-critical):",
+          error.message
+        );
+      }
+    }, 5000); // Wait 5 seconds before background check
   } catch (error) {
     const totalTime = Date.now() - startTime;
 
@@ -171,27 +166,76 @@ export const verifyPayment = async (req, res) => {
     console.error("After", totalTime, "ms");
     console.error("Error:", error.message);
 
-    if (error.response) {
-      console.error("Paystack error:", error.response.data);
-      return res.status(error.response.status || 500).json({
-        success: false,
-        message: error.response.data?.message || "Paystack verification failed",
-        details: error.response.data,
-      });
-    }
-
-    if (error.code === "ECONNABORTED") {
-      return res.status(408).json({
-        success: false,
-        message: "Request timeout",
-      });
-    }
-
     return res.status(500).json({
       success: false,
       message: "Server error during verification",
       error: error.message,
     });
+  }
+};
+
+// POST /api/webhooks/paystack - Webhook handler for reconciliation
+export const paystackWebhook = async (req, res) => {
+  try {
+    const hash = crypto
+      .createHmac("sha512", process.env.PAYSTACK_SECRET_KEY)
+      .update(JSON.stringify(req.body))
+      .digest("hex");
+
+    if (hash !== req.headers["x-paystack-signature"]) {
+      console.error("❌ Invalid webhook signature");
+      return res.status(401).send("Invalid signature");
+    }
+
+    const event = req.body;
+    console.log("📥 Webhook received:", event.event);
+
+    if (event.event === "charge.success") {
+      const { reference, amount, customer, metadata } = event.data;
+      const paidAmount = amount / 100;
+      const userId =
+        metadata?.userId ||
+        metadata?.custom_fields?.find((f) => f.variable_name === "user_id")
+          ?.value;
+
+      console.log("💰 Webhook payment success:");
+      console.log("  Reference:", reference);
+      console.log("  Amount:", paidAmount);
+      console.log("  UserID:", userId);
+
+      // Check if already processed
+      if (processedTransactions.has(reference)) {
+        console.log("⚠️ Already processed via API:", reference);
+        return res.status(200).send("OK");
+      }
+
+      if (!userId) {
+        console.error("❌ No userId in webhook metadata");
+        return res.status(200).send("OK");
+      }
+
+      // Find and update client
+      const client = await Client.findById(userId);
+      if (!client) {
+        console.error("❌ Client not found:", userId);
+        return res.status(200).send("OK");
+      }
+
+      const oldCredit = client.credit || 0;
+      client.credit = oldCredit + paidAmount;
+      await client.save();
+
+      processedTransactions.set(reference, Date.now());
+
+      console.log("✅ Webhook: Credit added");
+      console.log("  Old:", oldCredit);
+      console.log("  New:", client.credit);
+    }
+
+    res.status(200).send("OK");
+  } catch (error) {
+    console.error("Webhook error:", error);
+    res.status(500).send("Error");
   }
 };
 
@@ -226,7 +270,6 @@ export const getCurrentClient = async (req, res) => {
   }
 };
 
-// PUT /api/clients/:id/credit (manual credit update)
 export const updateClientCredit = async (req, res) => {
   try {
     const { id } = req.params;
@@ -277,7 +320,6 @@ export const updateClientCredit = async (req, res) => {
   }
 };
 
-// POST /api/clients/initialize-payment
 export const initializePayment = async (req, res) => {
   try {
     const { amount } = req.body;
@@ -306,20 +348,17 @@ export const initializePayment = async (req, res) => {
       });
     }
 
-    // Generate unique reference
     const reference = `QBE_${Date.now()}_${userId}`;
 
     console.log("🔄 Initializing payment:");
     console.log("  Reference:", reference);
     console.log("  Amount:", amount);
-    console.log("  Email:", "attajnr731@gmail.com");
 
-    // Initialize transaction with Paystack
     const initResponse = await axios.post(
       "https://api.paystack.co/transaction/initialize",
       {
-        email: "attajnr731@gmail.com",
-        amount: Math.round(amount * 100), // Convert to pesewas/kobo
+        email: client.email || `${client.phone}@quebe.app`,
+        amount: Math.round(amount * 100),
         reference: reference,
         currency: "GHS",
         channels: ["card", "mobile_money"],

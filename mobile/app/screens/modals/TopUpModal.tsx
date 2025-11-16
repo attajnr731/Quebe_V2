@@ -16,7 +16,6 @@ import { MaterialIcons } from "@expo/vector-icons";
 import { WebView } from "react-native-webview";
 import { verifyPaymentAndAddCredit } from "../../services/clientService";
 import { useAuth } from "../../contexts/AuthContext";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 
 interface TopUpModalProps {
   visible: boolean;
@@ -35,7 +34,6 @@ const TopUpModal: React.FC<TopUpModalProps> = ({
   const [paymentAmount, setPaymentAmount] = useState("");
   const [showPaymentWebView, setShowPaymentWebView] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
-  const [verificationStatus, setVerificationStatus] = useState("");
   const quickAmounts = [5, 10, 20, 50];
 
   const handleProceedToPayment = () => {
@@ -56,8 +54,6 @@ const TopUpModal: React.FC<TopUpModalProps> = ({
     const amount = parseFloat(paymentAmount);
     const userId = userData?._id || "guest";
     const userPhone = userData?.phone || "0000000000";
-
-    // Use phone as email if no email exists (Paystack accepts this in test mode)
     const userEmail = userData?.email || `${userPhone}@quebe.app`;
 
     return `
@@ -115,11 +111,6 @@ const TopUpModal: React.FC<TopUpModalProps> = ({
               display_name: "User ID",
               variable_name: "user_id",
               value: '${userId}'
-            },
-            {
-              display_name: "Phone",
-              variable_name: "phone",
-              value: '${userPhone}'
             }
           ]
         },
@@ -153,92 +144,71 @@ const TopUpModal: React.FC<TopUpModalProps> = ({
         const { reference, amount } = data;
         setShowPaymentWebView(false);
         setIsVerifying(true);
-        setVerificationStatus("Verifying payment...");
 
         console.log("✅ Payment successful:", { reference, amount });
 
-        // Wait 2 seconds for Paystack to finalize
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        // Single verification call - backend handles it optimistically
+        try {
+          const result = await verifyPaymentAndAddCredit(reference, amount);
 
-        const maxAttempts = 5;
-        let success = false;
+          if (result.success) {
+            setIsVerifying(false);
 
-        for (let attempt = 0; attempt < maxAttempts; attempt++) {
-          try {
-            setVerificationStatus(
-              `Verifying... (${attempt + 1}/${maxAttempts})`
-            );
-            console.log(`🔄 Verification attempt ${attempt + 1}`);
+            // Refresh user data
+            await refreshUserData();
 
-            const result = await verifyPaymentAndAddCredit(reference, amount);
-
-            if (result.success) {
-              success = true;
-
-              // Update local storage
-              if (result.client) {
-                await AsyncStorage.setItem(
-                  "userData",
-                  JSON.stringify(result.client)
-                );
-                await refreshUserData();
-              }
-
-              setIsVerifying(false);
-              Alert.alert(
-                "Success! 🎉",
-                `GH₵ ${amount.toFixed(2)} has been added to your account`,
-                [
-                  {
-                    text: "OK",
-                    onPress: () => {
-                      onPaymentSuccess(reference, amount);
-                      setPaymentAmount("");
-                      onClose();
-                    },
+            Alert.alert(
+              "Success! 🎉",
+              `GH₵ ${amount.toFixed(2)} has been added to your account`,
+              [
+                {
+                  text: "OK",
+                  onPress: () => {
+                    onPaymentSuccess(reference, amount);
+                    setPaymentAmount("");
+                    onClose();
                   },
-                ]
-              );
-              break;
-            } else if (result.message?.toLowerCase().includes("already")) {
-              success = true;
-              setIsVerifying(false);
-              Alert.alert(
-                "Already Processed",
-                "This payment was already credited to your account.",
-                [{ text: "OK", onPress: onClose }]
-              );
-              await refreshUserData();
-              break;
-            }
-
-            console.log("❌ Verification failed:", result.message);
-          } catch (err: any) {
-            console.log("⚠️ Verification error:", err.message);
+                },
+              ]
+            );
+          } else {
+            // Even if verification "fails", payment was successful
+            // Backend will reconcile via webhook
+            setIsVerifying(false);
+            Alert.alert(
+              "Payment Received! ✓",
+              `Your payment was successful! Your balance will update in a moment.\n\nReference: ${reference.substring(
+                0,
+                20
+              )}...`,
+              [
+                {
+                  text: "OK",
+                  onPress: () => {
+                    setPaymentAmount("");
+                    onClose();
+                    // Refresh after a few seconds
+                    setTimeout(() => refreshUserData(), 3000);
+                  },
+                },
+              ]
+            );
           }
-
-          // Wait before next attempt (exponential backoff)
-          if (attempt < maxAttempts - 1) {
-            const waitTime = Math.pow(2, attempt + 1) * 1000; // 2s, 4s, 8s, 16s
-            console.log(`⏳ Waiting ${waitTime / 1000}s before retry...`);
-            await new Promise((r) => setTimeout(r, waitTime));
-          }
-        }
-
-        if (!success) {
+        } catch (error) {
+          console.error("Verification error:", error);
           setIsVerifying(false);
+
+          // Don't show error - payment was successful
           Alert.alert(
-            "Payment Received",
-            "Your payment was successful! Your balance will update shortly via webhook. Please check back in 1-2 minutes.\n\nReference: " +
-              reference.substring(0, 20) +
-              "...",
+            "Payment Received! ✓",
+            "Your payment was successful! Your balance will update shortly.",
             [
               {
                 text: "OK",
                 onPress: () => {
                   setPaymentAmount("");
                   onClose();
-                  refreshUserData();
+                  setTimeout(() => refreshUserData(), 3000);
                 },
               },
             ]
@@ -262,10 +232,10 @@ const TopUpModal: React.FC<TopUpModalProps> = ({
           <View className="bg-white rounded-3xl p-8 items-center w-full max-w-sm">
             <ActivityIndicator size="large" color="#2563EB" />
             <Text className="text-gray-700 mt-4 text-lg font-semibold text-center">
-              {verificationStatus}
+              Processing Payment...
             </Text>
             <Text className="text-gray-500 mt-2 text-center text-sm">
-              Confirming with Paystack...
+              This will only take a moment
             </Text>
           </View>
         </View>

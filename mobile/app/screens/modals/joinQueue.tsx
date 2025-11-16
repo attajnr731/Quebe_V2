@@ -19,7 +19,7 @@ import { fetchOrganizations } from "../../services/organizationService";
 import { SkeletonJoinQueue } from "../skeletons/SkeletonJoinQueue";
 
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
-const MODAL_HEIGHT = SCREEN_HEIGHT * 0.9;
+const MODAL_HEIGHT = SCREEN_HEIGHT * 0.65;
 
 interface JoinQueueProps {
   visible: boolean;
