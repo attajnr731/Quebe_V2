@@ -9,6 +9,7 @@ import branchRoutes from "./routes/branchRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import clientRoutes from "./routes/clientRoutes.js";
 import webhookRoutes from "./routes/webhookRoutes.js";
+import queueRoutes from "./routes/queueRoutes.js";
 
 dotenv.config();
 
@@ -46,6 +47,7 @@ app.use("/api/organizations", organizationRoutes);
 app.use("/api/branches", branchRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/clients", clientRoutes);
+app.use("/api/queues", queueRoutes);
 
 // Test route
 app.get("/", (req, res) => res.send("Server is running..."));

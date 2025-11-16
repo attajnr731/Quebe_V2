@@ -1,5 +1,5 @@
 // mobile/app/screens/tabs/home.tsx
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { View, Text, TouchableOpacity, Dimensions, Alert } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -9,6 +9,7 @@ import Animated, {
   useSharedValue,
   withTiming,
   withDelay,
+  withSpring,
   Easing,
 } from "react-native-reanimated";
 import { mockQueues } from "../../mock/queues";
@@ -24,9 +25,6 @@ const Home = () => {
   const [selectedQueueId, setSelectedQueueId] = useState<string | null>(null);
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [showAmountModal, setShowAmountModal] = useState(false);
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [paymentAmount, setPaymentAmount] = useState("");
-  const user = userData;
 
   const handleNotifications = () => console.log("Go to notifications");
   const handleComplaint = () => console.log("Make a complaint");
@@ -52,10 +50,9 @@ const Home = () => {
 
   const handlePaymentCancel = () => {
     console.log("Payment cancelled");
-    setShowPaymentModal(false);
   };
 
-  const userCredits = user?.credit || 0;
+  const userCredits = userData?.credit || 0;
 
   const formatWait = (mins: number) => {
     if (mins < 60) return `${mins}m`;
@@ -63,8 +60,6 @@ const Home = () => {
     const m = mins % 60;
     return `${h}h ${m > 0 ? `${m}m` : ""}`.trim();
   };
-
-  // Quick amount buttons
 
   return (
     <View className="flex-1 bg-gray-50">
@@ -123,9 +118,7 @@ const Home = () => {
                   <Text className="text-sm font-medium text-blue-100">
                     Your Credit Balance
                   </Text>
-                  <Text className="text-2xl font-bold text-white mt-1">
-                    {userCredits.toLocaleString()} ₡
-                  </Text>
+                  <AnimatedCreditDisplay credit={userCredits} />
                 </View>
                 <TouchableOpacity
                   onPress={handleTopUpCredit}
@@ -177,6 +170,34 @@ const Home = () => {
         onPaymentCancel={handlePaymentCancel}
       />
     </View>
+  );
+};
+
+// Animated Credit Display Component
+const AnimatedCreditDisplay = ({ credit }: { credit: number }) => {
+  const scale = useSharedValue(1);
+  const [displayCredit, setDisplayCredit] = useState(credit);
+
+  useEffect(() => {
+    // Animate when credit changes
+    if (credit !== displayCredit) {
+      scale.value = withSpring(1.2, { damping: 10 }, () => {
+        scale.value = withSpring(1);
+      });
+      setDisplayCredit(credit);
+    }
+  }, [credit]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  return (
+    <Animated.View style={animatedStyle}>
+      <Text className="text-2xl font-bold text-white mt-1">
+        {displayCredit.toLocaleString()} ₵
+      </Text>
+    </Animated.View>
   );
 };
 

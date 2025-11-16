@@ -1,6 +1,9 @@
 // mobile/app/contexts/AuthContext.tsx
 import React, { createContext, useContext, useState, useEffect } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import axios from "axios";
+
+const API_BASE = "https://quebe-v2.onrender.com/api";
 
 type AuthContextType = {
   isAuthenticated: boolean;
@@ -11,6 +14,7 @@ type AuthContextType = {
   continueAsGuest: () => Promise<void>;
   logout: () => Promise<void>;
   refreshUserData: () => Promise<void>;
+  updateUserData: (updates: Partial<any>) => Promise<void>;
   isLoading: boolean;
 };
 
@@ -101,17 +105,68 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
+  // Fetch fresh user data from server
   const refreshUserData = async () => {
     try {
-      const user = await AsyncStorage.getItem("userData");
+      const token = await AsyncStorage.getItem("authToken");
 
-      if (user) {
-        const parsedUser = JSON.parse(user);
-        setUserData(parsedUser);
-        console.log("User data refreshed:", parsedUser);
+      if (!token) {
+        console.log("No token found, skipping refresh");
+        return;
       }
+
+      console.log("🔄 Fetching fresh user data from server...");
+
+      const response = await axios.get(`${API_BASE}/clients/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+        timeout: 10000,
+      });
+
+      if (response.data.success && response.data.client) {
+        const freshUserData = response.data.client;
+
+        // Update AsyncStorage
+        await AsyncStorage.setItem("userData", JSON.stringify(freshUserData));
+
+        // Update state
+        setUserData(freshUserData);
+
+        console.log("✅ User data refreshed:", {
+          name: freshUserData.name,
+          credit: freshUserData.credit,
+        });
+      }
+    } catch (error: any) {
+      console.error("❌ Error refreshing user data:", error.message);
+
+      // Fallback: try to read from AsyncStorage if server fails
+      try {
+        const user = await AsyncStorage.getItem("userData");
+        if (user) {
+          setUserData(JSON.parse(user));
+        }
+      } catch (storageError) {
+        console.error("Error reading from storage:", storageError);
+      }
+    }
+  };
+
+  // Update user data locally (optimistic update)
+  const updateUserData = async (updates: Partial<any>) => {
+    try {
+      if (!userData) return;
+
+      const updatedUser = { ...userData, ...updates };
+
+      // Update state immediately
+      setUserData(updatedUser);
+
+      // Update AsyncStorage
+      await AsyncStorage.setItem("userData", JSON.stringify(updatedUser));
+
+      console.log("✅ User data updated locally:", updates);
     } catch (error) {
-      console.error("Error refreshing user data:", error);
+      console.error("Error updating user data:", error);
     }
   };
 
@@ -126,6 +181,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         continueAsGuest,
         logout,
         refreshUserData,
+        updateUserData,
         isLoading,
       }}
     >

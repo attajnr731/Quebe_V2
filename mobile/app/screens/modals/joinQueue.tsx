@@ -17,9 +17,13 @@ import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
 import { fetchOrganizations } from "../../services/organizationService";
 import { SkeletonJoinQueue } from "../skeletons/SkeletonJoinQueue";
+import { useAuth } from "../../contexts/AuthContext";
+import axios from "axios";
 
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
-const MODAL_HEIGHT = SCREEN_HEIGHT * 0.65;
+const MODAL_HEIGHT = SCREEN_HEIGHT * 0.55;
+
+const API_BASE = "https://quebe-v2.onrender.com/api";
 
 interface JoinQueueProps {
   visible: boolean;
@@ -36,13 +40,17 @@ const JoinQueue: React.FC<JoinQueueProps> = ({
   onClose,
   onJoinQueue,
 }) => {
-  const [search, setSearch] = useState("");
+  const { userData, updateUserData } = useAuth();
+
+  const [orgSearch, setOrgSearch] = useState("");
+  const [branchSearch, setBranchSearch] = useState("");
   const [organizations, setOrganizations] = useState<any[]>([]);
   const [selectedOrg, setSelectedOrg] = useState<string | null>(null);
   const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
   const [notifyAt, setNotifyAt] = useState("");
   const [step, setStep] = useState<"org" | "branch" | "review">("org");
   const [loading, setLoading] = useState(false);
+  const [joining, setJoining] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
@@ -50,6 +58,12 @@ const JoinQueue: React.FC<JoinQueueProps> = ({
   const selectedBranchData = selectedOrgData?.branches?.find(
     (b: any) => b._id === selectedBranch
   );
+
+  const orgCredits = selectedOrgData?.credits ?? 0;
+  const isFree = orgCredits === 0;
+  const creditText = isFree
+    ? "Free"
+    : `${orgCredits} Credit${orgCredits !== 1 ? "s" : ""}`;
 
   // Load organizations
   useEffect(() => {
@@ -81,6 +95,7 @@ const JoinQueue: React.FC<JoinQueueProps> = ({
   const goBack = () => {
     if (step === "branch") {
       setSelectedOrg(null);
+      setBranchSearch("");
       fadeTo("org");
     } else if (step === "review") {
       setSelectedBranch(null);
@@ -90,6 +105,7 @@ const JoinQueue: React.FC<JoinQueueProps> = ({
 
   const handleSelectOrg = (orgId: string) => {
     setSelectedOrg(orgId);
+    setBranchSearch("");
     fadeTo("branch");
   };
 
@@ -98,29 +114,56 @@ const JoinQueue: React.FC<JoinQueueProps> = ({
     fadeTo("review");
   };
 
-  const isJoinDisabled = !selectedOrg || !selectedBranch;
+  const isJoinDisabled = !selectedOrg || !selectedBranch || joining;
 
-  const handleJoin = () => {
-    if (isJoinDisabled) return;
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    onJoinQueue({
-      orgId: selectedOrg!,
-      branchId: selectedBranch!,
-      notifyAt: notifyAt ? parseInt(notifyAt, 10) : undefined,
-    });
-    reset();
-    onClose();
+  const handleJoin = async () => {
+    if (isJoinDisabled || joining) return;
+
+    setJoining(true);
+
+    try {
+      const token =
+        userData?.token || (await AsyncStorage.getItem("authToken"));
+      if (!token) throw new Error("No auth token");
+
+      const payload = {
+        orgId: selectedOrg!,
+        branchId: selectedBranch!,
+        notifyAt: notifyAt ? parseInt(notifyAt, 10) : undefined,
+      };
+
+      const res = await axios.post(`${API_BASE}/queues/join`, payload, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (res.data.success) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+        // Optimistically update user credit
+        if (!isFree && userData?.credit > 0) {
+          updateUserData({ credit: userData.credit - 1 });
+        }
+
+        onJoinQueue(payload);
+        reset();
+        onClose();
+      }
+    } catch (error: any) {
+      alert(error.response?.data?.message || "Failed to join queue");
+    } finally {
+      setJoining(false);
+    }
   };
 
   const reset = () => {
     setSelectedOrg(null);
     setSelectedBranch(null);
     setNotifyAt("");
-    setSearch("");
+    setOrgSearch("");
+    setBranchSearch("");
     setStep("org");
   };
 
-  // Show skeleton while loading
   if (loading) {
     return (
       <Modal visible={visible} transparent animationType="fade">
@@ -170,23 +213,24 @@ const JoinQueue: React.FC<JoinQueueProps> = ({
 
             {/* Step Content */}
             <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
+              {/* ORGANIZATION STEP */}
               {step === "org" && (
                 <ScrollView className="px-4 pt-3">
                   <TextInput
-                    value={search}
-                    onChangeText={setSearch}
+                    value={orgSearch}
+                    onChangeText={setOrgSearch}
                     placeholder="Search organization..."
-                    className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-5 mb-3"
+                    className="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-3"
                   />
                   {organizations
                     .filter((o) =>
-                      o.name.toLowerCase().includes(search.toLowerCase())
+                      o.name.toLowerCase().includes(orgSearch.toLowerCase())
                     )
                     .map((org) => (
                       <TouchableOpacity
                         key={org._id}
                         onPress={() => handleSelectOrg(org._id)}
-                        className="border border-gray-200 rounded-lg px-3 py-5 flex-row items-center justify-between mb-2 bg-white"
+                        className="border border-gray-200 rounded-lg p-3 flex-row items-center justify-between mb-2 bg-white"
                       >
                         <View className="flex-row items-center flex-1">
                           <MaterialIcons
@@ -213,49 +257,74 @@ const JoinQueue: React.FC<JoinQueueProps> = ({
                 </ScrollView>
               )}
 
+              {/* BRANCH STEP */}
               {step === "branch" && selectedOrgData && (
                 <ScrollView className="px-4 pt-3">
                   <Text className="text-base font-semibold text-gray-800 mb-3">
                     Select Branch
                   </Text>
-                  {selectedOrgData.branches?.map((branch: any) => (
-                    <TouchableOpacity
-                      key={branch._id}
-                      onPress={() => handleSelectBranch(branch._id)}
-                      className={`border rounded-lg p-3 mb-2 ${
-                        selectedBranch === branch._id
-                          ? "border-blue-500 bg-blue-50"
-                          : "border-gray-200 bg-white"
-                      }`}
-                    >
-                      <Text className=" text-gray-900 text-xl">
-                        {branch.name}
-                      </Text>
-                      {branch.queueCount != null && (
-                        <Text className="text-lg text-gray-600 mt-1">
-                          {branch.queueCount} in queue
+                  <TextInput
+                    value={branchSearch}
+                    onChangeText={setBranchSearch}
+                    placeholder="Search branch..."
+                    className="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-3"
+                  />
+                  {selectedOrgData.branches
+                    ?.filter((b: any) =>
+                      b.name.toLowerCase().includes(branchSearch.toLowerCase())
+                    )
+                    .map((branch: any) => (
+                      <TouchableOpacity
+                        key={branch._id}
+                        onPress={() => handleSelectBranch(branch._id)}
+                        className={`border rounded-lg p-3 mb-2 ${
+                          selectedBranch === branch._id
+                            ? "border-blue-500 bg-blue-50"
+                            : "border-gray-200 bg-white"
+                        }`}
+                      >
+                        <Text className="font-semibold text-gray-900">
+                          {branch.name}
                         </Text>
-                      )}
-                    </TouchableOpacity>
-                  ))}
+                        {branch.queueCount != null && (
+                          <Text className="text-lg text-gray-600 mt-1">
+                            {branch.queueCount} in queue
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    ))}
                 </ScrollView>
               )}
 
+              {/* REVIEW STEP */}
               {step === "review" && (
                 <ScrollView className="px-4 pt-3 pb-20">
                   <Text className="text-base font-semibold text-gray-800 mb-3">
                     Review
                   </Text>
+
                   <View className="bg-gray-50 rounded-lg p-3 mb-2">
                     <Text className="text-lg text-gray-600">Organization</Text>
                     <Text className="font-semibold text-gray-900">
                       {selectedOrgData?.name}
                     </Text>
                   </View>
+
                   <View className="bg-gray-50 rounded-lg p-3 mb-2">
                     <Text className="text-lg text-gray-600">Branch</Text>
                     <Text className="font-semibold text-gray-900">
                       {selectedBranchData?.name}
+                    </Text>
+                  </View>
+
+                  <View className="bg-gray-50 rounded-lg p-3 mb-2">
+                    <Text className="text-lg text-gray-600">Cost</Text>
+                    <Text
+                      className={`font-bold ${
+                        isFree ? "text-green-600" : "text-blue-600"
+                      }`}
+                    >
+                      {creditText}
                     </Text>
                   </View>
 
@@ -295,8 +364,8 @@ const JoinQueue: React.FC<JoinQueueProps> = ({
                   end={{ x: 1, y: 1 }}
                   className="py-4 px-8 flex-row justify-center items-center"
                 >
-                  <Text className="text-white  font-bold text-xl tracking-wide text-center py-5">
-                    Join Queue
+                  <Text className="text-white font-bold text-xl tracking-wide text-center py-5">
+                    {joining ? "Joining..." : "Join Queue"}
                   </Text>
                 </LinearGradient>
               </TouchableOpacity>

@@ -30,7 +30,7 @@ const TopUpModal: React.FC<TopUpModalProps> = ({
   onPaymentSuccess,
   onPaymentCancel,
 }) => {
-  const { userData, refreshUserData } = useAuth();
+  const { userData, refreshUserData, updateUserData } = useAuth();
   const [paymentAmount, setPaymentAmount] = useState("");
   const [showPaymentWebView, setShowPaymentWebView] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
@@ -147,16 +147,25 @@ const TopUpModal: React.FC<TopUpModalProps> = ({
 
         console.log("✅ Payment successful:", { reference, amount });
 
-        // Single verification call - backend handles it optimistically
+        // OPTIMISTIC UI UPDATE - Update credit immediately
+        const currentCredit = userData?.credit || 0;
+        const newCredit = currentCredit + amount;
+
+        // Update UI immediately (if updateUserData exists in your context)
+        if (updateUserData) {
+          updateUserData(newCredit);
+        }
+
+        // Then verify with backend
         try {
           const result = await verifyPaymentAndAddCredit(reference, amount);
 
+          // Refresh to get the actual server state
+          await refreshUserData();
+
+          setIsVerifying(false);
+
           if (result.success) {
-            setIsVerifying(false);
-
-            // Refresh user data
-            await refreshUserData();
-
             Alert.alert(
               "Success! 🎉",
               `GH₵ ${amount.toFixed(2)} has been added to your account`,
@@ -173,11 +182,9 @@ const TopUpModal: React.FC<TopUpModalProps> = ({
             );
           } else {
             // Even if verification "fails", payment was successful
-            // Backend will reconcile via webhook
-            setIsVerifying(false);
             Alert.alert(
               "Payment Received! ✓",
-              `Your payment was successful! Your balance will update in a moment.\n\nReference: ${reference.substring(
+              `Your payment was successful! Your balance has been updated.\n\nReference: ${reference.substring(
                 0,
                 20
               )}...`,
@@ -185,10 +192,9 @@ const TopUpModal: React.FC<TopUpModalProps> = ({
                 {
                   text: "OK",
                   onPress: () => {
+                    onPaymentSuccess(reference, amount);
                     setPaymentAmount("");
                     onClose();
-                    // Refresh after a few seconds
-                    setTimeout(() => refreshUserData(), 3000);
                   },
                 },
               ]
@@ -198,17 +204,19 @@ const TopUpModal: React.FC<TopUpModalProps> = ({
           console.error("Verification error:", error);
           setIsVerifying(false);
 
-          // Don't show error - payment was successful
+          // Credit was already added optimistically, so still show success
           Alert.alert(
             "Payment Received! ✓",
-            "Your payment was successful! Your balance will update shortly.",
+            "Your payment was successful! Your balance has been updated.",
             [
               {
                 text: "OK",
                 onPress: () => {
+                  onPaymentSuccess(reference, amount);
                   setPaymentAmount("");
                   onClose();
-                  setTimeout(() => refreshUserData(), 3000);
+                  // Try to refresh one more time
+                  setTimeout(() => refreshUserData(), 2000);
                 },
               },
             ]
@@ -305,10 +313,10 @@ const TopUpModal: React.FC<TopUpModalProps> = ({
               className="rounded-xl overflow-hidden"
             >
               <LinearGradient
-                colors={["#2563EB", "#1E3A8A"]}
+                colors={["#2563EB", "#0736b6ff"]}
                 className="py-4 px-8"
               >
-                <Text className="text-white font-bold text-lg text-center">
+                <Text className="text-white font-bold text-lg text-center py-5">
                   Continue to Payment
                 </Text>
               </LinearGradient>
